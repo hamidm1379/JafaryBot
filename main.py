@@ -5,8 +5,6 @@ from yt_dlp import YoutubeDL
 import json
 import time
 import threading
-import io
-import requests
 
 # توکن ربات تلگرام
 TELEGRAM_TOKEN = "8212407334:AAFux0h8ZL-9lnNscQOQkeynMTKg-9lWH5o"
@@ -223,16 +221,16 @@ def search_music_video(query_text):
         print(f"خطا در جستجو: {e}")
         return None
 
-# ==================== دانلود مستقیم ====================
+# ==================== دانلود ====================
 
 def download_video(url, message, quality='720p'):
-    """دانلود و ارسال مستقیم بدون ذخیره روی دیسک"""
-    
+    """دانلود ویدیو"""
     try:
         # تشخیص user_id
         if hasattr(message, 'from_user'):
             user_id = message.from_user.id
         else:
+            # اگر از callback اومده، user_id رو از user_data بگیریم
             chat_id = message.chat.id
             user_id = None
             for uid, data in user_data.items():
@@ -242,298 +240,21 @@ def download_video(url, message, quality='720p'):
             if not user_id:
                 user_id = chat_id
         
-        # تنظیم فرمت براساس کیفیت
-        format_options = {
-            '2160p': 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]',
-            '1080p': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]',
-            '720p': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]',
-            '480p': 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]',
-            '360p': 'bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]'
-        }
-        format_str = format_options.get(quality, 'best[height<=720]')
-        
-        # پیغام شروع
-        bot.edit_message_text(
-            '🔍 در حال دریافت اطلاعات ویدیو...',
-            message.chat.id,
-            message.message_id
-        )
-        
-        # تنظیمات yt-dlp برای گرفتن URL مستقیم
-        ydl_opts = {
-            'format': format_str,
-            'noplaylist': True,
-            'quiet': True,
-            'no_warnings': True,
-            'nocheckcertificate': True,
-            'no_check_certificate': True,
-            'geo_bypass': True,
-        }
-        
-        if os.path.exists('cookies.txt'):
-            ydl_opts['cookiefile'] = 'cookies.txt'
-        
-        # دریافت اطلاعات ویدیو
-        print(f"[DEBUG] دریافت اطلاعات: {url}")
-        
-        with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            
-            title = info.get('title', 'ویدیو')
-            duration = info.get('duration', 0)
-            
-            # دریافت URL مستقیم
-            if 'url' in info:
-                video_url = info['url']
-            elif 'requested_downloads' in info and len(info['requested_downloads']) > 0:
-                video_url = info['requested_downloads'][0]['url']
-            else:
-                raise Exception("لینک دانلود پیدا نشد! از روش معمولی استفاده میشه...")
-        
-        print(f"[DEBUG] لینک مستقیم: {video_url[:100]}...")
-        
-        # دانلود فایل در حافظه
-        bot.edit_message_text(
-            f'⏳ در حال دانلود...\n\n🎬 {title[:50]}...',
-            message.chat.id,
-            message.message_id
-        )
-        
-        # استفاده از requests برای دانلود streaming
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        
-        response = requests.get(video_url, stream=True, timeout=120, headers=headers)
-        response.raise_for_status()
-        
-        # دریافت حجم کل
-        total_size = int(response.headers.get('content-length', 0))
-        total_mb = total_size / (1024 * 1024)
-        
-        print(f"[DEBUG] حجم فایل: {total_mb:.2f} MB")
-        
-        # بررسی حجم
-        max_size = 50 * 1024 * 1024  # 50MB
-        
-        if total_size > max_size:
-            bot.edit_message_text(
-                f'❌ حجم فایل بیش از 50MB!\n\n'
-                f'📹 {title}\n'
-                f'📊 حجم: {total_mb:.1f} MB\n\n'
-                'لطفا کیفیت پایین‌تری انتخاب کنید.',
-                message.chat.id,
-                message.message_id
-            )
-            return
-        
-        # دانلود به BytesIO با progress
-        video_data = io.BytesIO()
-        downloaded = 0
-        chunk_size = 8192
-        last_update = [0]
-        
-        for chunk in response.iter_content(chunk_size=chunk_size):
-            if chunk:
-                video_data.write(chunk)
-                downloaded += len(chunk)
-                
-                # به‌روزرسانی پیشرفت هر 2 ثانیه
-                current_time = time.time()
-                if current_time - last_update[0] >= 2:
-                    last_update[0] = current_time
-                    
-                    if total_size > 0:
-                        percent = (downloaded / total_size) * 100
-                        filled = int(percent / 5)
-                        bar = '█' * filled + '░' * (20 - filled)
-                        downloaded_mb = downloaded / (1024 * 1024)
-                        
-                        try:
-                            bot.edit_message_text(
-                                f"🎬 در حال دانلود...\n\n"
-                                f"{bar} {percent:.1f}%\n\n"
-                                f"📊 {downloaded_mb:.1f} MB / {total_mb:.1f} MB",
-                                message.chat.id,
-                                message.message_id
-                            )
-                        except:
-                            pass
-        
-        print(f"[DEBUG] دانلود کامل: {downloaded / (1024*1024):.2f} MB")
-        
-        # ارسال به تلگرام
-        video_data.seek(0)  # برگشت به ابتدای استریم
-        video_data.name = f"{title[:50]}.mp4"  # تنظیم نام فایل
-        
-        upload_cancelled = [False]
-        
-        def upload_animation():
-            animations = ['⬆️', '⬆️⬆️', '⬆️⬆️⬆️', '⬆️⬆️⬆️⬆️']
-            idx = 0
-            start_time = time.time()
-            
-            while not upload_cancelled[0]:
-                try:
-                    elapsed = int(time.time() - start_time)
-                    bot.edit_message_text(
-                        f'✅ دانلود کامل!\n\n'
-                        f'🎬 {title[:50]}...\n'
-                        f'📊 {total_mb:.1f} MB\n\n'
-                        f'📤 در حال ارسال {animations[idx % 4]}\n'
-                        f'⏱ زمان: {elapsed}s',
-                        message.chat.id,
-                        message.message_id
-                    )
-                except:
-                    pass
-                idx += 1
-                time.sleep(1.5)
-        
-        upload_thread = threading.Thread(target=upload_animation)
-        upload_thread.daemon = True
-        upload_thread.start()
-        
-        upload_start_time = time.time()
-        
-        try:
-            print(f"[DEBUG] شروع آپلود به تلگرام...")
-            
-            bot.send_video(
-                message.chat.id,
-                video_data,
-                caption=f'{title}\n@DanceMoviebot',
-                supports_streaming=True,
-                duration=duration if duration else None,
-                timeout=600,  # 10 دقیقه
-                read_timeout=600,
-                write_timeout=600
-            )
-            
-            print(f"[DEBUG] آپلود موفق!")
-            upload_cancelled[0] = True
-            
-            upload_time = int(time.time() - upload_start_time)
-            
-            # پیام موفقیت
-            try:
-                bot.edit_message_text(
-                    f'✅ ارسال موفق!\n\n'
-                    f'🎬 {title[:50]}...\n'
-                    f'📊 {total_mb:.1f} MB\n'
-                    f'⏱ زمان آپلود: {upload_time}s',
-                    message.chat.id,
-                    message.message_id
-                )
-                time.sleep(2)
-                bot.delete_message(message.chat.id, message.message_id)
-            except:
-                pass
-            
-            increment_download()
-            show_main_menu(message.chat.id, user_id)
-            
-        except telebot.apihelper.ApiTelegramException as api_error:
-            upload_cancelled[0] = True
-            error_code = getattr(api_error, 'error_code', None)
-            error_msg = str(api_error)
-            
-            print(f"[ERROR] خطای API تلگرام: {error_code} - {error_msg}")
-            
-            if error_code == 413 or 'too large' in error_msg.lower():
-                bot.edit_message_text(
-                    f'❌ فایل خیلی بزرگه!\n\n'
-                    f'📊 حجم: {total_mb:.1f} MB\n'
-                    f'کیفیت پایین‌تری انتخاب کنید.',
-                    message.chat.id,
-                    message.message_id
-                )
-            elif error_code == 400:
-                bot.edit_message_text(
-                    f'❌ فرمت فایل پشتیبانی نمیشه!\n\n'
-                    f'لطفا کیفیت دیگری امتحان کنید.',
-                    message.chat.id,
-                    message.message_id
-                )
-            else:
-                bot.edit_message_text(
-                    f'❌ خطا در ارسال!\n\n'
-                    f'کد خطا: {error_code}\n'
-                    f'{error_msg[:100]}...',
-                    message.chat.id,
-                    message.message_id
-                )
-        
-        except Exception as upload_error:
-            upload_cancelled[0] = True
-            error_msg = str(upload_error)
-            print(f"[ERROR] خطای آپلود: {error_msg}")
-            
-            if 'timeout' in error_msg.lower() or 'timed out' in error_msg.lower():
-                bot.edit_message_text(
-                    f'❌ زمان آپلود تمام شد!\n\n'
-                    f'📊 حجم: {total_mb:.1f} MB\n\n'
-                    f'💡 راه حل:\n'
-                    f'• کیفیت پایین‌تر انتخاب کنید\n'
-                    f'• اینترنت سرور رو چک کنید',
-                    message.chat.id,
-                    message.message_id
-                )
-            else:
-                bot.edit_message_text(
-                    f'❌ خطا در ارسال!\n\n'
-                    f'{error_msg[:150]}...',
-                    message.chat.id,
-                    message.message_id
-                )
-    
-    except Exception as e:
-        error_message = str(e)
-        print(f"[ERROR] خطای کلی: {error_message}")
-        
-        # اگه دانلود مستقیم کار نکرد، از روش معمولی استفاده کن
-        if 'لینک دانلود پیدا نشد' in error_message:
-            print("[DEBUG] استفاده از روش دانلود معمولی...")
-            download_video_fallback(url, message, quality, user_id)
-        elif 'timeout' in error_message.lower() or 'connection' in error_message.lower():
-            try:
-                bot.edit_message_text(
-                    f'❌ خطا در دانلود!\n\n'
-                    f'💡 احتمالاً مشکل اتصال به سرور\n\n'
-                    f'راه حل:\n'
-                    f'1️⃣ لینک دیگری امتحان کنید\n'
-                    f'2️⃣ کیفیت پایین‌تر انتخاب کنید',
-                    message.chat.id,
-                    message.message_id
-                )
-            except:
-                pass
+        if quality == '2160p':
+            format_str = 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]'
+        elif quality == '1080p':
+            format_str = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]'
+        elif quality == '720p':
+            format_str = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]'
+        elif quality == '480p':
+            format_str = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]'
+        elif quality == '360p':
+            format_str = 'bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]'
         else:
-            try:
-                bot.edit_message_text(
-                    f'❌ خطا!\n\n'
-                    f'{error_message[:200]}',
-                    message.chat.id,
-                    message.message_id
-                )
-            except:
-                pass
-
-def download_video_fallback(url, message, quality, user_id):
-    """روش دانلود جایگزین (با ذخیره موقت روی دیسک)"""
-    filename = None
-    
-    try:
-        format_options = {
-            '2160p': 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]',
-            '1080p': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]',
-            '720p': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]',
-            '480p': 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]',
-            '360p': 'bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]'
-        }
-        format_str = format_options.get(quality, 'best[height<=720]')
+            format_str = 'best[height<=720]'
         
         last_update_time = [0]
+        download_started = [False]
         
         def progress_hook(d):
             try:
@@ -543,8 +264,11 @@ def download_video_fallback(url, message, quality, user_id):
                 last_update_time[0] = current_time
                 
                 if d['status'] == 'downloading':
+                    download_started[0] = True
                     downloaded = d.get('downloaded_bytes', 0)
                     total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+                    speed = d.get('speed', 0)
+                    eta = d.get('eta', 0)
                     
                     if total > 0:
                         percent = (downloaded / total) * 100
@@ -552,36 +276,46 @@ def download_video_fallback(url, message, quality, user_id):
                         bar = '█' * filled + '░' * (20 - filled)
                         downloaded_mb = downloaded / (1024 * 1024)
                         total_mb = total / (1024 * 1024)
+                        speed_mb = (speed / (1024 * 1024)) if speed else 0
+                        eta_str = f"{eta}s" if eta else "..."
+                        
+                        text = (
+                            f"🎬 در حال دانلود...\n\n"
+                            f"{bar} {percent:.1f}%\n\n"
+                            f"📊 {downloaded_mb:.1f} MB / {total_mb:.1f} MB\n"
+                            f"⚡️ {speed_mb:.1f} MB/s\n"
+                            f"⏱ باقیمانده: {eta_str}"
+                        )
                         
                         try:
-                            bot.edit_message_text(
-                                f"🎬 دانلود (روش جایگزین)...\n\n"
-                                f"{bar} {percent:.1f}%\n\n"
-                                f"📊 {downloaded_mb:.1f} MB / {total_mb:.1f} MB",
-                                message.chat.id,
-                                message.message_id
-                            )
+                            bot.edit_message_text(text, message.chat.id, message.message_id)
                         except:
                             pass
             except:
                 pass
-        
-        os.makedirs('downloads', exist_ok=True)
-        
+
+        download_dir = os.path.join(os.getcwd(), 'downloads')
+        os.makedirs(download_dir, exist_ok=True)
+
         ydl_opts = {
             'format': format_str,
-            'outtmpl': 'downloads/%(id)s.%(ext)s',
+             'outtmpl': os.path.join(download_dir, '%(id)s.%(ext)s'),
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
             'nocheckcertificate': True,
             'no_check_certificate': True,
             'geo_bypass': True,
+            'socket_timeout': 60,
+            'retries': 10,
+            'fragment_retries': 10,
             'progress_hooks': [progress_hook],
         }
         
         if os.path.exists('cookies.txt'):
             ydl_opts['cookiefile'] = 'cookies.txt'
+        
+        os.makedirs('downloads', exist_ok=True)
         
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -593,6 +327,7 @@ def download_video_fallback(url, message, quality, user_id):
             max_size = 50 * 1024 * 1024
             
             if filesize > max_size:
+                os.remove(filename)
                 bot.edit_message_text(
                     f'❌ حجم فایل بیش از 50MB!\n\n'
                     f'📹 {title}\n'
@@ -603,45 +338,102 @@ def download_video_fallback(url, message, quality, user_id):
                 )
                 return
             
-            bot.edit_message_text(
-                f'✅ دانلود کامل!\n\n'
-                f'📤 در حال ارسال...',
-                message.chat.id,
-                message.message_id
-            )
+            upload_cancelled = [False]
             
-            with open(filename, 'rb') as video:
-                bot.send_video(
+            def upload_animation():
+                animations = ['⬆️', '⬆️⬆️', '⬆️⬆️⬆️', '⬆️⬆️⬆️⬆️']
+                idx = 0
+                start_time = time.time()
+                
+                while not upload_cancelled[0]:
+                    try:
+                        elapsed = int(time.time() - start_time)
+                        bot.edit_message_text(
+                            f'✅ دانلود کامل!\n\n'
+                            f'🎬 {title[:50]}...\n'
+                            f'📊 {filesize / (1024*1024):.1f} MB\n\n'
+                            f'📤 در حال ارسال {animations[idx % 4]}\n'
+                            f'⏱ زمان: {elapsed}s',
+                            message.chat.id,
+                            message.message_id
+                        )
+                    except:
+                        pass
+                    idx += 1
+                    time.sleep(1)
+            
+            upload_thread = threading.Thread(target=upload_animation)
+            upload_thread.daemon = True
+            upload_thread.start()
+            
+            upload_start_time = time.time()
+            
+            try:
+                with open(filename, 'rb') as video:
+                    bot.send_video(
+                        message.chat.id,
+                        video,
+                        caption=f'{title}\n@DanceMoviebot',
+                        supports_streaming=True,
+                        duration=duration if duration else None,
+                        timeout=300
+                    )
+            finally:
+                upload_cancelled[0] = True
+                time.sleep(0.5)
+            
+            upload_time = int(time.time() - upload_start_time)
+            
+            try:
+                os.remove(filename)
+            except:
+                pass
+            
+            try:
+                bot.edit_message_text(
+                    f'✅ ارسال موفق!\n\n'
+                    f'🎬 {title[:50]}...\n'
+                    f'📊 {filesize / (1024*1024):.1f} MB\n'
+                    f'⏱ زمان آپلود: {upload_time}s',
                     message.chat.id,
-                    video,
-                    caption=f'{title}\n@DanceMoviebot',
-                    supports_streaming=True,
-                    duration=duration if duration else None,
-                    timeout=600
+                    message.message_id
                 )
-            
-            bot.edit_message_text(
-                f'✅ ارسال موفق!',
-                message.chat.id,
-                message.message_id
-            )
-            time.sleep(2)
-            bot.delete_message(message.chat.id, message.message_id)
+                
+                time.sleep(2)
+                bot.delete_message(message.chat.id, message.message_id)
+            except:
+                pass
             
             increment_download()
+            
+            # نمایش منوی مناسب بر اساس user_id
             show_main_menu(message.chat.id, user_id)
             
     except Exception as e:
-        print(f"[ERROR] خطای روش جایگزین: {e}")
-        bot.edit_message_text(
-            f'❌ خطا در دانلود!\n\n{str(e)[:200]}',
-            message.chat.id,
-            message.message_id
-        )
-    finally:
-        if filename and os.path.exists(filename):
+        error_message = str(e)
+        
+        if any(x in error_message.lower() for x in ['timeout', 'timed out', 'connection', 'proxy', 'tunnel']):
             try:
-                os.remove(filename)
+                bot.edit_message_text(
+                    f'❌ خطا در دانلود!\n\n'
+                    f'💡 احتمالاً مشکل از محدودیت PythonAnywhere است.\n\n'
+                    f'راه حل:\n'
+                    f'1️⃣ لینک دیگری امتحان کنید\n'
+                    f'2️⃣ کیفیت پایین‌تر انتخاب کنید\n'
+                    f'3️⃣ از سرویس Render.com استفاده کنید',
+                    message.chat.id,
+                    message.message_id
+                )
+            except:
+                pass
+        else:
+            try:
+                bot.edit_message_text(
+                    f'❌ خطا در دانلود!\n\n'
+                    f'لطفا دوباره تلاش کنید.',
+                    message.chat.id,
+                    message.message_id
+                )
             except:
                 pass
 
@@ -780,6 +572,7 @@ def keyboard_menu_handler(message):
     """مدیریت دکمه کیبورد ثابت"""
     user_id = message.from_user.id
     
+    # ریست state
     if user_id in user_states:
         user_states[user_id] = STATE_NONE
     
@@ -1405,6 +1198,7 @@ def callback_handler(call):
                 call.message.message_id
             )
             
+            # ذخیره user_id برای استفاده در تابع download_video
             if user_id not in user_data:
                 user_data[user_id] = {}
             user_data[user_id]['download_user_id'] = user_id
@@ -1417,10 +1211,8 @@ def callback_handler(call):
 def main():
     """راه‌اندازی ربات"""
     try:
-        print('🤖 ربات با دانلود مستقیم (بدون ذخیره روی دیسک) شروع شد!')
+        print('🤖 ربات با pyTelegramBotAPI شروع به کار کرد...')
         print('✅ این نسخه با Python 3.13 سازگار است!')
-        print('💾 فایل‌ها مستقیماً از حافظه به تلگرام ارسال می‌شوند')
-        print('=' * 60)
         bot.infinity_polling(timeout=60, long_polling_timeout=60)
     except Exception as e:
         print(f'❌ خطا: {e}')
@@ -1428,7 +1220,6 @@ def main():
         print('1️⃣ نصب کتابخانه‌ها:')
         print('   pip3 install pyTelegramBotAPI --user')
         print('   pip3 install yt-dlp --user')
-        print('   pip3 install requests --user')
         print('2️⃣ اجرای ربات:')
         print('   python3 bot.py')
 
