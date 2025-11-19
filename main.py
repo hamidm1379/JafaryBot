@@ -534,19 +534,6 @@ def reply_keyboard_menu(user_id):
     markup.add(types.KeyboardButton("🏠 منو اصلی"))
     return markup
 
-def quality_keyboard():
-    """کیبورد انتخاب کیفیت"""
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton("📹 4K (2160p)", callback_data='quality_2160p'),
-        types.InlineKeyboardButton("📹 Full HD (1080p)", callback_data='quality_1080p'),
-        types.InlineKeyboardButton("📹 HD (720p)", callback_data='quality_720p'),
-        types.InlineKeyboardButton("📹 SD (480p)", callback_data='quality_480p'),
-        types.InlineKeyboardButton("📹 Low (360p)", callback_data='quality_360p'),
-        types.InlineKeyboardButton("🔙 بازگشت به منو", callback_data='back_to_menu')
-    )
-    return markup
-
 def show_main_menu(chat_id, user_id, text='🎬 عملیات بعدی:\n\nلطفا یکی از گزینه‌ها را انتخاب کنید:'):
     """نمایش منوی اصلی"""
     if isinstance(user_id, int):
@@ -674,15 +661,10 @@ def text_handler(message):
         else:
             if user_id not in user_data:
                 user_data[user_id] = {}
-            user_data[user_id]['video_url'] = url
+            user_data[user_id]['download_user_id'] = user_id
             
-            bot.edit_message_text(
-                '🎬 یوتیوب\n\n'
-                '📊 لطفا کیفیت دانلود را انتخاب کنید:',
-                message.chat.id,
-                msg.message_id,
-                reply_markup=quality_keyboard()
-            )
+            thread = threading.Thread(target=download_video, args=(url, msg, '480p'))
+            thread.start()
         
         user_states[user_id] = STATE_NONE
     
@@ -1241,41 +1223,17 @@ def callback_handler(call):
             
             if user_id not in user_data:
                 user_data[user_id] = {}
-            user_data[user_id]['video_url'] = video['url']
+            user_data[user_id]['download_user_id'] = user_id
             
-            platform_emoji = '🎬' if video['platform'] == 'youtube' else '🎵'
-            
-            bot.edit_message_text(
-                f'{platform_emoji} یوتیوب\n\n'
-                f'{video["title"][:60]}...\n'
-                f'⏱ مدت: {video["duration"]}\n\n'
-                '📊 لطفا کیفیت دانلود را انتخاب کنید:',
-                call.message.chat.id,
-                call.message.message_id,
-                reply_markup=quality_keyboard()
-            )
-    
-    elif call.data.startswith('quality_'):
-        quality = call.data.replace('quality_', '')
-        # اگر 360p انتخاب نشده باشد، همه به 480p تبدیل می‌شوند
-        if quality != '360p':
-            quality = '480p'
-        
-        url = user_data.get(user_id, {}).get('video_url')
-        
-        if url:
             bot.edit_message_text(
                 '⏳ در حال آماده‌سازی...',
                 call.message.chat.id,
                 call.message.message_id
             )
             
-            if user_id not in user_data:
-                user_data[user_id] = {}
-            user_data[user_id]['download_user_id'] = user_id
-            
-            thread = threading.Thread(target=download_video, args=(url, call.message, quality))
+            thread = threading.Thread(target=download_video, args=(video['url'], call.message, '480p'))
             thread.start()
+    
 
 # ==================== اجرای ربات ====================
 
