@@ -5,6 +5,8 @@ from yt_dlp import YoutubeDL
 import json
 import time
 import threading
+import tempfile
+import shutil
 
 # توکن ربات تلگرام
 TELEGRAM_TOKEN = "8212407334:AAFux0h8ZL-9lnNscQOQkeynMTKg-9lWH5o"
@@ -95,6 +97,45 @@ def normalize_channel_id(channel):
         username = channel.replace('t.me/', '').strip('/')
         return f'@{username}'
     return channel
+
+def get_download_path():
+    """دریافت مسیر دانلود با اطمینان از وجود پوشه"""
+    # استفاده از پوشه موقت سیستم
+    download_dir = os.path.join(tempfile.gettempdir(), 'bot_downloads')
+    
+    # اگر پوشه وجود نداشت ایجاد کن
+    if not os.path.exists(download_dir):
+        try:
+            os.makedirs(download_dir, exist_ok=True)
+            print(f'✅ پوشه دانلود ایجاد شد: {download_dir}')
+        except Exception as e:
+            print(f'❌ خطا در ایجاد پوشه: {e}')
+            # fallback به دایرکتوری جاری
+            download_dir = os.path.join(os.getcwd(), 'downloads')
+            os.makedirs(download_dir, exist_ok=True)
+    
+    return download_dir
+
+def cleanup_old_files(download_dir, max_age_hours=1):
+    """پاک‌سازی فایل‌های قدیمی"""
+    try:
+        current_time = time.time()
+        max_age_seconds = max_age_hours * 3600
+        
+        for filename in os.listdir(download_dir):
+            filepath = os.path.join(download_dir, filename)
+            
+            if os.path.isfile(filepath):
+                file_age = current_time - os.path.getmtime(filepath)
+                
+                if file_age > max_age_seconds:
+                    try:
+                        os.remove(filepath)
+                        print(f'🗑 فایل قدیمی پاک شد: {filename}')
+                    except:
+                        pass
+    except Exception as e:
+        print(f'خطا در پاک‌سازی: {e}')
 
 # ==================== بررسی عضویت ====================
 
@@ -224,13 +265,13 @@ def search_music_video(query_text):
 # ==================== دانلود ====================
 
 def download_video(url, message, quality='720p'):
-    """دانلود ویدیو"""
+    """دانلود ویدیو با مدیریت بهتر فایل"""
+    filename = None
     try:
         # تشخیص user_id
         if hasattr(message, 'from_user'):
             user_id = message.from_user.id
         else:
-            # اگر از callback اومده، user_id رو از user_data بگیریم
             chat_id = message.chat.id
             user_id = None
             for uid, data in user_data.items():
@@ -240,6 +281,7 @@ def download_video(url, message, quality='720p'):
             if not user_id:
                 user_id = chat_id
         
+        # انتخاب فرمت بر اساس کیفیت
         if quality == '2160p':
             format_str = 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]'
         elif quality == '1080p':
@@ -294,12 +336,17 @@ def download_video(url, message, quality='720p'):
             except:
                 pass
 
-        download_dir = os.path.join(os.getcwd(), 'downloads')
-        os.makedirs(download_dir, exist_ok=True)
+        # دریافت مسیر دانلود
+        download_dir = get_download_path()
+        
+        # پاک‌سازی فایل‌های قدیمی
+        cleanup_old_files(download_dir)
+        
+        print(f'📁 مسیر دانلود: {download_dir}')
 
         ydl_opts = {
             'format': format_str,
-             'outtmpl': os.path.join(download_dir, '%(id)s.%(ext)s'),
+            'outtmpl': os.path.join(download_dir, '%(id)s.%(ext)s'),
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
@@ -315,7 +362,7 @@ def download_video(url, message, quality='720p'):
         if os.path.exists('cookies.txt'):
             ydl_opts['cookiefile'] = 'cookies.txt'
         
-        os.makedirs('downloads', exist_ok=True)
+        print('📥 شروع دانلود...')
         
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -323,7 +370,15 @@ def download_video(url, message, quality='720p'):
             title = info.get('title', 'ویدیو')
             duration = info.get('duration', 0)
             
+            print(f'✅ دانلود کامل: {filename}')
+            
+            # بررسی وجود فایل
+            if not os.path.exists(filename):
+                raise Exception(f'فایل دانلود نشد: {filename}')
+            
             filesize = os.path.getsize(filename)
+            print(f'📊 حجم فایل: {filesize / (1024*1024):.2f} MB')
+            
             max_size = 50 * 1024 * 1024
             
             if filesize > max_size:
@@ -368,6 +423,8 @@ def download_video(url, message, quality='720p'):
             
             upload_start_time = time.time()
             
+            print('📤 شروع آپلود...')
+            
             try:
                 with open(filename, 'rb') as video:
                     bot.send_video(
@@ -378,16 +435,22 @@ def download_video(url, message, quality='720p'):
                         duration=duration if duration else None,
                         timeout=300
                     )
+                
+                print('✅ آپلود موفق')
+                
             finally:
                 upload_cancelled[0] = True
                 time.sleep(0.5)
             
             upload_time = int(time.time() - upload_start_time)
             
+            # پاک کردن فایل
             try:
-                os.remove(filename)
-            except:
-                pass
+                if filename and os.path.exists(filename):
+                    os.remove(filename)
+                    print('🗑 فایل پاک شد')
+            except Exception as e:
+                print(f'خطا در پاک کردن فایل: {e}')
             
             try:
                 bot.edit_message_text(
@@ -406,21 +469,29 @@ def download_video(url, message, quality='720p'):
             
             increment_download()
             
-            # نمایش منوی مناسب بر اساس user_id
             show_main_menu(message.chat.id, user_id)
             
     except Exception as e:
         error_message = str(e)
+        print(f'❌ خطا در دانلود: {error_message}')
+        
+        # پاک کردن فایل در صورت خطا
+        try:
+            if filename and os.path.exists(filename):
+                os.remove(filename)
+                print('🗑 فایل ناقص پاک شد')
+        except:
+            pass
         
         if any(x in error_message.lower() for x in ['timeout', 'timed out', 'connection', 'proxy', 'tunnel']):
             try:
                 bot.edit_message_text(
                     f'❌ خطا در دانلود!\n\n'
-                    f'💡 احتمالاً مشکل از محدودیت PythonAnywhere است.\n\n'
+                    f'💡 احتمالاً مشکل از اتصال به اینترنت است.\n\n'
                     f'راه حل:\n'
                     f'1️⃣ لینک دیگری امتحان کنید\n'
                     f'2️⃣ کیفیت پایین‌تر انتخاب کنید\n'
-                    f'3️⃣ از سرویس Render.com استفاده کنید',
+                    f'3️⃣ چند دقیقه دیگر تلاش کنید',
                     message.chat.id,
                     message.message_id
                 )
@@ -430,6 +501,7 @@ def download_video(url, message, quality='720p'):
             try:
                 bot.edit_message_text(
                     f'❌ خطا در دانلود!\n\n'
+                    f'جزئیات: {error_message[:100]}\n\n'
                     f'لطفا دوباره تلاش کنید.',
                     message.chat.id,
                     message.message_id
@@ -572,7 +644,6 @@ def keyboard_menu_handler(message):
     """مدیریت دکمه کیبورد ثابت"""
     user_id = message.from_user.id
     
-    # ریست state
     if user_id in user_states:
         user_states[user_id] = STATE_NONE
     
@@ -624,11 +695,10 @@ def text_handler(message):
         
         if youtube_results is None or musicvideo_results is None:
             bot.edit_message_text(
-                '❌ متأسفانه PythonAnywhere نمی‌تونه به یوتیوب دسترسی داشته باشه!\n\n'
+                '❌ متأسفانه نمی‌تونه به یوتیوب دسترسی داشته باشه!\n\n'
                 '💡 راه حل:\n'
                 '1️⃣ از "📥 دانلود با لینک" استفاده کنید\n'
-                '2️⃣ لینک یوتیوب رو کپی کنید و بفرستید\n\n'
-                '🚀 یا ربات رو روی Render.com یا Railway نصب کنید که این مشکل رو نداره',
+                '2️⃣ لینک یوتیوب رو کپی کنید و بفرستید',
                 message.chat.id,
                 msg.message_id
             )
@@ -1198,7 +1268,6 @@ def callback_handler(call):
                 call.message.message_id
             )
             
-            # ذخیره user_id برای استفاده در تابع download_video
             if user_id not in user_data:
                 user_data[user_id] = {}
             user_data[user_id]['download_user_id'] = user_id
@@ -1211,8 +1280,14 @@ def callback_handler(call):
 def main():
     """راه‌اندازی ربات"""
     try:
+        # ایجاد پوشه دانلود در ابتدا
+        download_dir = get_download_path()
+        print(f'📁 مسیر دانلود: {download_dir}')
+        
         print('🤖 ربات با pyTelegramBotAPI شروع به کار کرد...')
         print('✅ این نسخه با Python 3.13 سازگار است!')
+        print('💾 مدیریت فایل بهبود یافته!')
+        
         bot.infinity_polling(timeout=60, long_polling_timeout=60)
     except Exception as e:
         print(f'❌ خطا: {e}')
