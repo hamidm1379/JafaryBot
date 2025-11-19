@@ -198,8 +198,11 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
         asyncio.set_event_loop(loop)
         
         async def send():
-            # استفاده از userbot_client اصلی (thread-safe در Pyrogram)
+            # ایجاد یک client جدید برای این thread (thread-safe)
+            temp_client = None
             try:
+                print(f'📤 شروع ارسال با UserBot: chat_id={chat_id}, is_video={is_video}')
+                
                 # اطمینان از اینکه caption یک string است و به درستی encode شده
                 caption_str = caption
                 if caption_str and isinstance(caption_str, bytes):
@@ -219,28 +222,46 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
                 if not os.path.isabs(file_path_str):
                     file_path_str = os.path.abspath(file_path_str)
                 
+                print(f'📁 مسیر فایل: {file_path_str}')
+                
                 # بررسی وجود فایل
                 if not os.path.exists(file_path_str):
+                    print(f'❌ فایل پیدا نشد: {file_path_str}')
                     return False, f"فایل پیدا نشد: {file_path_str}"
                 
-                # اطمینان از اینکه client متصل است
-                if not userbot_client.is_connected:
-                    await userbot_client.start()
+                print(f'✅ فایل پیدا شد: {os.path.getsize(file_path_str) / (1024*1024):.2f} MB')
                 
+                # ایجاد client جدید برای این thread
+                print('🔄 ایجاد UserBot client جدید...')
+                temp_client = Client(
+                    USERBOT_SESSION_NAME,
+                    api_id=USERBOT_API_ID,
+                    api_hash=USERBOT_API_HASH,
+                    no_updates=True
+                )
+                
+                print('🔄 اتصال به UserBot...')
+                await temp_client.start()
+                print('✅ UserBot متصل شد')
+                
+                print(f'📤 در حال ارسال فایل...')
                 if is_video:
-                    await userbot_client.send_video(
+                    result = await temp_client.send_video(
                         chat_id=chat_id,
                         video=file_path_str,
                         caption=caption_str if caption_str else None,
                         supports_streaming=True,
                         duration=duration if duration else None
                     )
+                    print(f'✅ ویدیو ارسال شد: message_id={result.id if result else "None"}')
                 else:
-                    await userbot_client.send_document(
+                    result = await temp_client.send_document(
                         chat_id=chat_id,
                         document=file_path_str,
                         caption=caption_str if caption_str else None
                     )
+                    print(f'✅ فایل ارسال شد: message_id={result.id if result else "None"}')
+                
                 return True, "موفق"
                     
             except FloodWait as e:
@@ -264,14 +285,27 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
                     return False, f"خطای encoding ({error_type}): {error_str}"
                 return False, f"خطا ({error_type}): {str(e)}"
             finally:
-                # نیازی به بستن client نیست چون از userbot_client اصلی استفاده می‌کنیم
-                pass
+                # بستن client
+                if temp_client:
+                    try:
+                        print('🔄 بستن UserBot client...')
+                        await temp_client.stop()
+                        await temp_client.disconnect()
+                        print('✅ UserBot client بسته شد')
+                    except Exception as e:
+                        print(f'⚠️ خطا در بستن client: {e}')
         
         try:
+            print('🔄 در حال اجرای async function...')
             result = loop.run_until_complete(send())
+            print(f'✅ نتیجه: success={result[0]}, message={result[1]}')
             return result
         except Exception as e:
-            return False, f"خطا در اجرا: {str(e)}"
+            error_msg = f"خطا در اجرا: {str(e)}"
+            print(f'❌ {error_msg}')
+            import traceback
+            traceback.print_exc()
+            return False, error_msg
         finally:
             try:
                 # بستن loop
