@@ -191,14 +191,31 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
     if not PYROGRAM_AVAILABLE or not userbot_client:
         return False, "UserBot در دسترس نیست"
     
-    try:
+    def run_in_thread():
+        """اجرای async function در thread جداگانه با event loop جدید"""
+        # ایجاد event loop جدید برای این thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
         async def send():
+            temp_client = None
             try:
+                # ایجاد یک client جدید برای این thread با session name متفاوت
+                import threading
+                thread_id = threading.current_thread().ident
+                session_name = f"{USERBOT_SESSION_NAME}_{thread_id}"
+                
+                temp_client = Client(
+                    session_name,
+                    api_id=USERBOT_API_ID,
+                    api_hash=USERBOT_API_HASH,
+                    no_updates=True  # برای جلوگیری از دریافت updates
+                )
+                
+                await temp_client.start()
+                
                 if is_video:
-                    sent_message = await userbot_client.send_video(
+                    await temp_client.send_video(
                         chat_id=chat_id,
                         video=file_path,
                         caption=caption,
@@ -206,25 +223,61 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
                         duration=duration if duration else None
                     )
                 else:
-                    sent_message = await userbot_client.send_document(
+                    await temp_client.send_document(
                         chat_id=chat_id,
                         document=file_path,
                         caption=caption
                     )
                 return True, "موفق"
+                    
             except FloodWait as e:
                 return False, f"FloodWait: {e.value} ثانیه"
             except RPCError as e:
                 return False, str(e)
             except Exception as e:
-                return False, str(e)
+                return False, f"خطا: {str(e)}"
+            finally:
+                # بستن client
+                if temp_client:
+                    try:
+                        await temp_client.stop()
+                        await temp_client.disconnect()
+                    except:
+                        pass
         
-        success, message = loop.run_until_complete(send())
-        loop.close()
+        try:
+            result = loop.run_until_complete(send())
+            return result
+        except Exception as e:
+            return False, f"خطا در اجرا: {str(e)}"
+        finally:
+            try:
+                # بستن loop
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            except:
+                pass
+            finally:
+                loop.close()
+    
+    try:
+        # اجرا در thread جداگانه
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(run_in_thread)
+            success, message = future.result(timeout=3600)  # 1 hour timeout
         return success, message
-        
+    except concurrent.futures.TimeoutError:
+        return False, "Timeout: ارسال فایل بیش از حد طول کشید"
     except Exception as e:
-        return False, str(e)
+        error_msg = str(e)
+        print(f"❌ خطا در ارسال با UserBot: {error_msg}")
+        import traceback
+        traceback.print_exc()
+        return False, error_msg
 
 # ==================== بررسی عضویت ====================
 
