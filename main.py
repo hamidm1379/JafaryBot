@@ -541,11 +541,37 @@ def download_video(url, message, quality='720p'):
             
             # تصمیم‌گیری: استفاده از UserBot یا ربات عادی
             # استفاده از UserBot برای همه فایل‌ها (بدون محدودیت حجم)
+            # اگر UserBot فعال نیست، سعی می‌کنیم دوباره راه‌اندازی کنیم
+            if USE_USERBOT_FOR_LARGE_FILES and PYROGRAM_AVAILABLE and not userbot_client:
+                print("⚠️ UserBot غیرفعال است، در حال راه‌اندازی مجدد...")
+                init_userbot()
+            
             use_userbot = (
                 USE_USERBOT_FOR_LARGE_FILES and 
                 PYROGRAM_AVAILABLE and 
                 userbot_client
             )
+            
+            if USE_USERBOT_FOR_LARGE_FILES and not use_userbot:
+                print(f"⚠️ UserBot در دسترس نیست - استفاده از ربات عادی (فایل: {filesize / (1024*1024):.1f} MB)")
+                # اگر UserBot فعال نیست و فایل بزرگ است، پیام خطا نمایش بده
+                if filesize > 50 * 1024 * 1024:
+                    try:
+                        bot.edit_message_text(
+                            f'❌ خطا: UserBot فعال نیست!\n\n'
+                            f'📹 {title[:50]}...\n'
+                            f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                            f'💡 برای ارسال فایل‌های بالای 50MB، UserBot باید فعال باشد.\n\n'
+                            f'لطفا:\n'
+                            f'1️⃣ مطمئن شوید Pyrogram نصب است: pip install pyrogram\n'
+                            f'2️⃣ API_ID و API_HASH را تنظیم کرده‌اید\n'
+                            f'3️⃣ ربات را دوباره راه‌اندازی کنید',
+                            message.chat.id,
+                            message.message_id
+                        )
+                    except:
+                        pass
+                    return
             
             # تصمیم‌گیری هوشمند: Video یا Document
             # با UserBot: همه ویدیوها به صورت ویدیو ارسال می‌شوند (بدون محدودیت 50MB)
