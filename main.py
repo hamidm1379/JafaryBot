@@ -706,10 +706,14 @@ def download_video(url, message, quality='720p'):
                             return
                         print('🔄 تلاش با ربات عادی...')
                         use_userbot = False  # fallback به ربات عادی
+                        # تنظیم مجدد send_as_document برای ربات عادی
+                        send_as_document = filesize > 50 * 1024 * 1024
                 except Exception as e:
                     print(f'⚠️ خطا در UserBot: {e}')
                     print('🔄 تلاش با ربات عادی...')
                     use_userbot = False
+                    # تنظیم مجدد send_as_document برای ربات عادی
+                    send_as_document = filesize > 50 * 1024 * 1024
             else:
                 print(f'⚠️ استفاده از ربات عادی برای ارسال فایل {filesize / (1024*1024):.1f} MB')
                 print(f'📊 UserBot client: {userbot_client is not None}')
@@ -718,6 +722,11 @@ def download_video(url, message, quality='720p'):
             
             if not use_userbot:
                 # استفاده از ربات عادی (pyTelegramBotAPI)
+                # اطمینان از اینکه فایل‌های بالای 50MB به صورت Document ارسال شوند
+                if filesize > 50 * 1024 * 1024:
+                    send_as_document = True
+                    print(f'⚠️ فایل {filesize / (1024*1024):.1f} MB است - ارسال به صورت Document (محدودیت ربات عادی)')
+                
                 try:
                     # Timeout بر اساس حجم - برای فایل‌های بزرگ timeout بیشتر
                     if filesize > 500 * 1024 * 1024:  # بالای 500 MB
@@ -743,15 +752,30 @@ def download_video(url, message, quality='720p'):
                             )
                     else:
                         # ارسال به صورت ویدیو (پخش مستقیم)
-                        with open(filename, 'rb') as file:
-                            bot.send_video(
-                                message.chat.id,
-                                file,
-                                caption=f'🎬 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n@DanceMoviebot',
-                                supports_streaming=True,
-                                duration=duration if duration else None,
-                                timeout=upload_timeout
-                            )
+                        # بررسی نهایی: اگر فایل بالای 50MB است، نباید به صورت ویدیو ارسال شود
+                        if filesize > 50 * 1024 * 1024:
+                            print(f'⚠️ فایل {filesize / (1024*1024):.1f} MB است - تغییر به Document')
+                            send_as_document = True
+                            # ارسال به صورت Document
+                            with open(filename, 'rb') as file:
+                                bot.send_document(
+                                    message.chat.id,
+                                    file,
+                                    caption=f'📁 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n\n💡 فایل رو دانلود کنید و پخش کنید\n\n@DanceMoviebot',
+                                    timeout=upload_timeout,
+                                    visible_file_name=f'{title[:50]}.mp4'
+                                )
+                        else:
+                            # ارسال به صورت ویدیو (پخش مستقیم)
+                            with open(filename, 'rb') as file:
+                                bot.send_video(
+                                    message.chat.id,
+                                    file,
+                                    caption=f'🎬 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n@DanceMoviebot',
+                                    supports_streaming=True,
+                                    duration=duration if duration else None,
+                                    timeout=upload_timeout
+                                )
                     
                     print('✅ آپلود موفق')
                     upload_cancelled[0] = True
