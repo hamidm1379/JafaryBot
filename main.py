@@ -353,10 +353,11 @@ def download_video(url, message, quality='720p'):
             'nocheckcertificate': True,
             'no_check_certificate': True,
             'geo_bypass': True,
-            'socket_timeout': 60,
+            'socket_timeout': 300,  # افزایش timeout برای فایل‌های بزرگ
             'retries': 10,
             'fragment_retries': 10,
             'progress_hooks': [progress_hook],
+            'http_chunk_size': 10485760,  # 10MB chunks برای دانلود بهتر فایل‌های بزرگ
         }
         
         if os.path.exists('cookies.txt'):
@@ -396,7 +397,8 @@ def download_video(url, message, quality='720p'):
                 return
             
             # تصمیم‌گیری هوشمند: Video یا Document
-            # فایل‌های بالای 50MB به صورت Document ارسال میشن
+            # فایل‌های بالای 50MB به صورت Document ارسال میشن (محدودیت تلگرام برای ویدیو)
+            # اما همه فایل‌ها تا 2GB دانلود و ارسال میشن
             send_as_document = filesize > 50 * 1024 * 1024
             
             # هشدار برای فایل‌های بزرگ
@@ -449,8 +451,13 @@ def download_video(url, message, quality='720p'):
             print(f'📤 شروع آپلود به صورت {"Document" if send_as_document else "Video"}...')
             
             try:
-                # Timeout بر اساس حجم
-                upload_timeout = 600 if filesize > 100 * 1024 * 1024 else 300
+                # Timeout بر اساس حجم - برای فایل‌های بزرگ timeout بیشتر
+                if filesize > 500 * 1024 * 1024:  # بالای 500 MB
+                    upload_timeout = 1800  # 30 دقیقه
+                elif filesize > 100 * 1024 * 1024:  # بالای 100 MB
+                    upload_timeout = 1200  # 20 دقیقه
+                else:
+                    upload_timeout = 600  # 10 دقیقه
                 
                 with open(filename, 'rb') as file:
                     if send_as_document:
