@@ -429,7 +429,7 @@ def download_video(url, message, quality='720p'):
                     bot.send_video(
                         message.chat.id,
                         video,
-                        caption=f'{title}\n@DanceMoviebot',
+                        caption=f'{title}\nمشاهده ویدیو های بیشتر\n@DanceMoviebot',
                         supports_streaming=True,
                         duration=duration if duration else None,
                         timeout=300
@@ -952,7 +952,7 @@ def callback_handler(call):
         
         bot.send_message(
             call.message.chat.id,
-            '🔍 لطفا نام موزیک ویدیو مورد نظرتون رو وارد کنید :',
+            '🔍 لطفا نام موزیک ویدیو مورد نظرتون رو وارد کنید :\n\n مثال : موزیک جدید خلسه',
             reply_markup=markup
         )
     
