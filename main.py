@@ -960,8 +960,6 @@ def callback_handler(call):
         bot.send_message(
             call.message.chat.id,
             '🔗 لطفا لینک موزیک ویدیو را ارسال کنید:\n\n'
-            '🎬 یوتیوب: https://www.youtube.com/watch?v=...\n'
-            '📷 اینستاگرام: https://www.instagram.com/...',
             reply_markup=markup
         )
     
