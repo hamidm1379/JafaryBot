@@ -211,16 +211,17 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
                     caption_str = ""
                 
                 # اطمینان از اینکه file_path یک string است
-                if isinstance(file_path, bytes):
-                    file_path = file_path.decode('utf-8', errors='ignore')
+                file_path_str = file_path
+                if isinstance(file_path_str, bytes):
+                    file_path_str = file_path_str.decode('utf-8', errors='ignore')
                 
                 # تبدیل مسیر به absolute path
-                if not os.path.isabs(file_path):
-                    file_path = os.path.abspath(file_path)
+                if not os.path.isabs(file_path_str):
+                    file_path_str = os.path.abspath(file_path_str)
                 
                 # بررسی وجود فایل
-                if not os.path.exists(file_path):
-                    return False, f"فایل پیدا نشد: {file_path}"
+                if not os.path.exists(file_path_str):
+                    return False, f"فایل پیدا نشد: {file_path_str}"
                 
                 # اطمینان از اینکه client متصل است
                 if not userbot_client.is_connected:
@@ -229,7 +230,7 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
                 if is_video:
                     await userbot_client.send_video(
                         chat_id=chat_id,
-                        video=file_path,
+                        video=file_path_str,
                         caption=caption_str if caption_str else None,
                         supports_streaming=True,
                         duration=duration if duration else None
@@ -237,7 +238,7 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
                 else:
                     await userbot_client.send_document(
                         chat_id=chat_id,
-                        document=file_path,
+                        document=file_path_str,
                         caption=caption_str if caption_str else None
                     )
                 return True, "موفق"
