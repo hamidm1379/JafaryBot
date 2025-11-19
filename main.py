@@ -587,8 +587,7 @@ def download_video(url, message, quality='720p'):
                     )
                     return
             
-            # تصمیم‌گیری: استفاده از UserBot یا ربات عادی
-            # استفاده از UserBot برای همه فایل‌ها (بدون محدودیت حجم)
+            # استفاده از UserBot برای همه فایل‌ها (بدون محدودیت 50MB)
             # اگر UserBot فعال نیست، سعی می‌کنیم دوباره راه‌اندازی کنیم
             if USE_USERBOT_FOR_LARGE_FILES and PYROGRAM_AVAILABLE and not userbot_client:
                 print("⚠️ UserBot غیرفعال است، در حال راه‌اندازی مجدد...")
@@ -600,51 +599,36 @@ def download_video(url, message, quality='720p'):
                 userbot_client
             )
             
-            # اگر UserBot فعال نیست، از ربات عادی استفاده می‌کنیم
-            # فقط برای فایل‌های بالای 50MB پیام هشدار نمایش می‌دهیم
+            # اگر UserBot فعال نیست، ارسال نمی‌کنیم و پیام خطا می‌دهیم
             if not use_userbot:
-                print(f"⚠️ UserBot در دسترس نیست - استفاده از ربات عادی (فایل: {filesize / (1024*1024):.1f} MB)")
-                # اگر فایل بزرگ است و UserBot فعال نیست، پیام هشدار نمایش بده (اما ارسال را متوقف نکن)
-                if filesize > 50 * 1024 * 1024 and USE_USERBOT_FOR_LARGE_FILES:
-                    try:
-                        bot.edit_message_text(
-                            f'⚠️ هشدار: UserBot فعال نیست!\n\n'
-                            f'📹 {title[:50]}...\n'
-                            f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                            f'💡 فایل با ربات عادی ارسال می‌شود (محدودیت 50MB برای ویدیو).\n'
-                            f'برای ارسال فایل‌های بزرگ، UserBot را فعال کنید.',
-                            message.chat.id,
-                            message.message_id
-                        )
-                        time.sleep(2)
-                    except:
-                        pass
-            
-            # تصمیم‌گیری هوشمند: Video یا Document
-            # با UserBot: همه ویدیوها به صورت ویدیو ارسال می‌شوند (بدون محدودیت 50MB)
-            # با ربات عادی: فایل‌های بالای 50MB به صورت Document ارسال می‌شوند
-            if use_userbot:
-                # با UserBot می‌توانیم همه ویدیوها را به صورت ویدیو ارسال کنیم
-                send_as_document = False
-            else:
-                # با ربات عادی، فایل‌های بالای 50MB باید به صورت document ارسال شوند
-                send_as_document = filesize > 50 * 1024 * 1024
-            
-            # هشدار برای فایل‌های بزرگ (فقط برای ربات عادی)
-            if send_as_document and not use_userbot:
+                print(f"❌ UserBot در دسترس نیست - ارسال متوقف شد (فایل: {filesize / (1024*1024):.1f} MB)")
                 try:
                     bot.edit_message_text(
-                        f'📁 فایل بزرگ است!\n\n'
+                        f'❌ خطا: UserBot فعال نیست!\n\n'
                         f'📹 {title[:50]}...\n'
                         f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                        f'💡 به صورت فایل ارسال میشه\n'
-                        f'⏳ چند دقیقه صبر کنید...',
+                        f'💡 برای ارسال فایل‌ها، UserBot باید فعال باشد.\n\n'
+                        f'لطفا:\n'
+                        f'1️⃣ مطمئن شوید Pyrogram نصب است: pip install pyrogram\n'
+                        f'2️⃣ API_ID و API_HASH را تنظیم کرده‌اید\n'
+                        f'3️⃣ ربات را دوباره راه‌اندازی کنید',
                         message.chat.id,
                         message.message_id
                     )
-                    time.sleep(2)
                 except:
                     pass
+                # پاک کردن فایل
+                try:
+                    if filename and os.path.exists(filename):
+                        os.remove(filename)
+                except:
+                    pass
+                return
+            
+            # با UserBot همه ویدیوها را به صورت ویدیو ارسال می‌کنیم (بدون محدودیت 50MB)
+            send_as_document = False
+            
+            # با UserBot همه فایل‌ها به صورت ویدیو ارسال می‌شوند
             
             upload_cancelled = [False]
             
@@ -720,148 +704,49 @@ def download_video(url, message, quality='720p'):
                             except:
                                 pass
                             return
-                        print('🔄 تلاش با ربات عادی...')
-                        use_userbot = False  # fallback به ربات عادی
-                        # تنظیم مجدد send_as_document برای ربات عادی
-                        send_as_document = filesize > 50 * 1024 * 1024
+                        # خطا در UserBot - ارسال نمی‌کنیم
+                        print('❌ خطا در UserBot - ارسال متوقف شد')
+                        try:
+                            bot.edit_message_text(
+                                f'❌ خطا در ارسال فایل!\n\n'
+                                f'📹 {title[:50]}...\n'
+                                f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                                f'💡 خطا: {error_msg}\n\n'
+                                f'لطفا دوباره تلاش کنید.',
+                                message.chat.id,
+                                message.message_id
+                            )
+                        except:
+                            pass
+                        # پاک کردن فایل
+                        try:
+                            if filename and os.path.exists(filename):
+                                os.remove(filename)
+                        except:
+                            pass
+                        return
                 except Exception as e:
                     print(f'⚠️ خطا در UserBot: {e}')
-                    print('🔄 تلاش با ربات عادی...')
-                    use_userbot = False
-                    # تنظیم مجدد send_as_document برای ربات عادی
-                    send_as_document = filesize > 50 * 1024 * 1024
-            else:
-                print(f'⚠️ استفاده از ربات عادی برای ارسال فایل {filesize / (1024*1024):.1f} MB')
-                print(f'📊 UserBot client: {userbot_client is not None}')
-                print(f'📊 PYROGRAM_AVAILABLE: {PYROGRAM_AVAILABLE}')
-                print(f'📊 USE_USERBOT_FOR_LARGE_FILES: {USE_USERBOT_FOR_LARGE_FILES}')
-            
-            if not use_userbot:
-                # استفاده از ربات عادی (pyTelegramBotAPI)
-                # اطمینان از اینکه فایل‌های بالای 50MB به صورت Document ارسال شوند
-                if filesize > 50 * 1024 * 1024:
-                    send_as_document = True
-                    print(f'⚠️ فایل {filesize / (1024*1024):.1f} MB است - ارسال به صورت Document (محدودیت ربات عادی)')
-                
-                try:
-                    # Timeout بر اساس حجم - برای فایل‌های بزرگ timeout بیشتر
-                    if filesize > 500 * 1024 * 1024:  # بالای 500 MB
-                        upload_timeout = 1800  # 30 دقیقه
-                    elif filesize > 100 * 1024 * 1024:  # بالای 100 MB
-                        upload_timeout = 1200  # 20 دقیقه
-                    elif filesize > 50 * 1024 * 1024:  # بالای 50 MB
-                        upload_timeout = 900  # 15 دقیقه
-                    else:
-                        upload_timeout = 600  # 10 دقیقه
-                    
-                    # استفاده از InputFile برای فایل‌های بزرگ
-                    # برای فایل‌های بزرگ، از مسیر فایل مستقیم استفاده می‌کنیم
-                    print(f'📤 آماده ارسال: send_as_document={send_as_document}, filesize={filesize / (1024*1024):.2f} MB')
-                    
-                    if send_as_document:
-                        # ارسال به صورت فایل (Document) - استفاده از مسیر فایل
-                        print(f'📁 ارسال به صورت Document...')
-                        with open(filename, 'rb') as file:
-                            bot.send_document(
-                                message.chat.id,
-                                file,
-                                caption=f'📁 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n\n💡 فایل رو دانلود کنید و پخش کنید\n\n@DanceMoviebot',
-                                timeout=upload_timeout,
-                                visible_file_name=f'{title[:50]}.mp4'
-                            )
-                    else:
-                        # ارسال به صورت ویدیو (پخش مستقیم)
-                        # بررسی نهایی: اگر فایل بالای 50MB است، نباید به صورت ویدیو ارسال شود
-                        if filesize > 50 * 1024 * 1024:
-                            print(f'⚠️ فایل {filesize / (1024*1024):.1f} MB است - تغییر به Document')
-                            send_as_document = True
-                            # ارسال به صورت Document
-                            print(f'📁 ارسال به صورت Document (بعد از بررسی نهایی)...')
-                            with open(filename, 'rb') as file:
-                                bot.send_document(
-                                    message.chat.id,
-                                    file,
-                                    caption=f'📁 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n\n💡 فایل رو دانلود کنید و پخش کنید\n\n@DanceMoviebot',
-                                    timeout=upload_timeout,
-                                    visible_file_name=f'{title[:50]}.mp4'
-                                )
-                        else:
-                            # ارسال به صورت ویدیو (پخش مستقیم)
-                            print(f'🎬 ارسال به صورت Video...')
-                            with open(filename, 'rb') as file:
-                                bot.send_video(
-                                    message.chat.id,
-                                    file,
-                                    caption=f'🎬 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n@DanceMoviebot',
-                                    supports_streaming=True,
-                                    duration=duration if duration else None,
-                                    timeout=upload_timeout
-                                )
-                    
-                    print('✅ آپلود موفق')
-                    upload_cancelled[0] = True
-                except Exception as upload_error:
-                    error_str = str(upload_error)
-                    error_code = getattr(upload_error, 'error_code', None)
-                    
-                    # لاگ خطا برای دیباگ
-                    print(f'❌ خطا در آپلود: {error_str}')
-                    print(f'📊 کد خطا: {error_code}')
-                    print(f'📁 حجم فایل: {filesize / (1024*1024):.2f} MB')
-                    print(f'📊 send_as_document: {send_as_document}')
-                    print(f'📊 use_userbot: {use_userbot}')
-                    print(f'📊 فایل: {filename}')
-                    
-                    upload_cancelled[0] = True
-                    
-                    # بررسی خطای 413 (Request Entity Too Large)
-                    if '413' in error_str or (error_code and error_code == 413) or 'Request Entity Too Large' in error_str or 'entity too large' in error_str.lower():
-                        try:
-                            if filename and os.path.exists(filename):
-                                os.remove(filename)
-                        except:
-                            pass
-                        
-                        bot.edit_message_text(
-                            f'❌ خطا: فایل خیلی بزرگ است!\n\n'
-                            f'📹 {title[:50]}...\n'
-                            f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                            f'💡 تلگرام نمی‌تواند این فایل را بپذیرد.\n\n'
-                            f'راه حل:\n'
-                            f'1️⃣ کیفیت پایین‌تری انتخاب کنید (480p یا 360p)\n'
-                            f'2️⃣ ویدیو کوتاه‌تری انتخاب کنید\n'
-                            f'3️⃣ چند دقیقه صبر کنید و دوباره تلاش کنید',
-                            message.chat.id,
-                            message.message_id
-                        )
-                        return
-                    else:
-                        # برای خطاهای دیگر، پیام مناسب نمایش بده
-                        try:
-                            if filename and os.path.exists(filename):
-                                os.remove(filename)
-                        except:
-                            pass
-                        
-                        # نمایش پیام خطا با جزئیات
-                        error_msg = error_str[:200] if len(error_str) > 200 else error_str
+                    print('❌ ارسال متوقف شد')
+                    try:
                         bot.edit_message_text(
                             f'❌ خطا در ارسال فایل!\n\n'
                             f'📹 {title[:50]}...\n'
                             f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                            f'💡 خطا: {error_msg}\n\n'
-                            f'راه حل:\n'
-                            f'1️⃣ چند دقیقه صبر کنید و دوباره تلاش کنید\n'
-                            f'2️⃣ کیفیت پایین‌تری انتخاب کنید\n'
-                            f'3️⃣ لینک دیگری امتحان کنید',
+                            f'💡 خطا: {str(e)}\n\n'
+                            f'لطفا دوباره تلاش کنید.',
                             message.chat.id,
                             message.message_id
                         )
-                        return
-                finally:
-                    if not upload_cancelled[0]:
-                        upload_cancelled[0] = True
-                    time.sleep(0.5)
+                    except:
+                        pass
+                    # پاک کردن فایل
+                    try:
+                        if filename and os.path.exists(filename):
+                            os.remove(filename)
+                    except:
+                        pass
+                    return
             
             upload_time = int(time.time() - upload_start_time)
             
