@@ -1259,6 +1259,10 @@ def callback_handler(call):
     
     elif call.data.startswith('quality_'):
         quality = call.data.replace('quality_', '')
+        # اگر 360p انتخاب نشده باشد، همه به 480p تبدیل می‌شوند
+        if quality != '360p':
+            quality = '480p'
+        
         url = user_data.get(user_id, {}).get('video_url')
         
         if url:
