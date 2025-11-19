@@ -9,8 +9,8 @@ import tempfile
 import shutil
 
 # توکن ربات تلگرام
-TELEGRAM_TOKEN = "8212407334:AAFux0h8ZL-9lnNscQOQkeynMTKg-9lWH5o"
-ADMIN_ID = 6097462059
+TELEGRAM_TOKEN = "8242200256:AAHWmaFY87Rcz5t-JLxZBV02m2iq-Z9oeg8"
+ADMIN_ID = 6097462059,126552002
 
 # فایل‌های ذخیره
 SETTINGS_FILE = "bot_settings.json"
@@ -384,10 +384,9 @@ def download_video(url, message, quality='720p'):
             if filesize > max_size:
                 os.remove(filename)
                 bot.edit_message_text(
-                    f'❌ حجم فایل بیش از 50MB!\n\n'
+                    f'خطا\n\n'
                     f'📹 {title}\n'
-                    f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                    'لطفا کیفیت پایین‌تری انتخاب کنید.',
+                    f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n',
                     message.chat.id,
                     message.message_id
                 )
