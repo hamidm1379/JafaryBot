@@ -265,7 +265,7 @@ def search_music_video(query_text):
 # ==================== دانلود ====================
 
 def download_video(url, message, quality='720p'):
-    """دانلود ویدیو با مدیریت بهتر فایل"""
+    """دانلود ویدیو با پشتیبانی از فایل‌های تا 2GB"""
     filename = None
     try:
         # تشخیص user_id
@@ -379,19 +379,37 @@ def download_video(url, message, quality='720p'):
             filesize = os.path.getsize(filename)
             print(f'📊 حجم فایل: {filesize / (1024*1024):.2f} MB')
             
-            max_size = 50 * 1024 * 1024
+            # محدودیت تلگرام: 2000 مگابایت برای ربات‌ها
+            max_size = 2000 * 1024 * 1024
             
             if filesize > max_size:
                 os.remove(filename)
                 bot.edit_message_text(
-                    f'❌ حجم فایل بیش از 50MB!\n\n'
+                    f'❌ حجم فایل بیش از 2GB!\n\n'
                     f'📹 {title}\n'
                     f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                    '💡 محدودیت تلگرام برای ربات‌ها 2GB است.\n'
                     'لطفا کیفیت پایین‌تری انتخاب کنید.',
                     message.chat.id,
                     message.message_id
                 )
                 return
+            
+            # هشدار برای فایل‌های بزرگ
+            if filesize > 100 * 1024 * 1024:
+                try:
+                    bot.edit_message_text(
+                        f'⚠️ فایل بزرگ است!\n\n'
+                        f'📹 {title[:50]}...\n'
+                        f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                        f'⏳ ممکنه چند دقیقه طول بکشه...\n'
+                        f'لطفا صبور باشید!',
+                        message.chat.id,
+                        message.message_id
+                    )
+                    time.sleep(2)
+                except:
+                    pass
             
             upload_cancelled = [False]
             
@@ -426,14 +444,17 @@ def download_video(url, message, quality='720p'):
             print('📤 شروع آپلود...')
             
             try:
+                # برای فایل‌های بزرگ‌تر از 50 مگ، timeout بیشتر
+                upload_timeout = 300 if filesize < 100 * 1024 * 1024 else 600
+                
                 with open(filename, 'rb') as video:
                     bot.send_video(
                         message.chat.id,
                         video,
-                        caption=f'{title}\n@DanceMoviebot',
+                        caption=f'{title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n@DanceMoviebot',
                         supports_streaming=True,
                         duration=duration if duration else None,
-                        timeout=300
+                        timeout=upload_timeout
                     )
                 
                 print('✅ آپلود موفق')
@@ -1287,6 +1308,7 @@ def main():
         print('🤖 ربات با pyTelegramBotAPI شروع به کار کرد...')
         print('✅ این نسخه با Python 3.13 سازگار است!')
         print('💾 مدیریت فایل بهبود یافته!')
+        print('📦 پشتیبانی از فایل‌های تا 2GB!')
         
         bot.infinity_polling(timeout=60, long_polling_timeout=60)
     except Exception as e:
