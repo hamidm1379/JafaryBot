@@ -380,16 +380,17 @@ def download_video(url, message, quality='720p'):
             filesize = os.path.getsize(filename)
             print(f'📊 حجم فایل: {filesize / (1024*1024):.2f} MB')
             
-            # محدودیت تلگرام: 2000 مگابایت برای ربات‌ها
-            max_size = 2000 * 1024 * 1024
+            # محدودیت تلگرام: 1500 مگابایت (1.5 GB) برای جلوگیری از خطای 413
+            # در عمل تلگرام ممکن است فایل‌های بالای 1.5 GB را رد کند
+            max_size = 1500 * 1024 * 1024
             
             if filesize > max_size:
                 os.remove(filename)
                 bot.edit_message_text(
-                    f'❌ حجم فایل بیش از 2GB!\n\n'
+                    f'❌ حجم فایل بیش از 1.5 GB!\n\n'
                     f'📹 {title}\n'
                     f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                    '💡 محدودیت تلگرام برای ربات‌ها 2GB است.\n'
+                    '💡 محدودیت تلگرام برای ارسال فایل 1.5 GB است.\n'
                     'لطفا کیفیت پایین‌تری انتخاب کنید.',
                     message.chat.id,
                     message.message_id
@@ -398,7 +399,7 @@ def download_video(url, message, quality='720p'):
             
             # تصمیم‌گیری هوشمند: Video یا Document
             # فایل‌های بالای 50MB به صورت Document ارسال میشن (محدودیت تلگرام برای ویدیو)
-            # اما همه فایل‌ها تا 2GB دانلود و ارسال میشن
+            # فایل‌های تا 1.5 GB دانلود و ارسال میشن
             send_as_document = filesize > 50 * 1024 * 1024
             
             # هشدار برای فایل‌های بزرگ
@@ -481,6 +482,36 @@ def download_video(url, message, quality='720p'):
                         )
                 
                 print('✅ آپلود موفق')
+                
+            except Exception as upload_error:
+                error_str = str(upload_error)
+                error_code = getattr(upload_error, 'error_code', None)
+                
+                # بررسی خطای 413 (Request Entity Too Large)
+                if '413' in error_str or (error_code and error_code == 413) or 'Request Entity Too Large' in error_str:
+                    upload_cancelled[0] = True
+                    try:
+                        if filename and os.path.exists(filename):
+                            os.remove(filename)
+                    except:
+                        pass
+                    
+                    bot.edit_message_text(
+                        f'❌ خطا: فایل خیلی بزرگ است!\n\n'
+                        f'📹 {title[:50]}...\n'
+                        f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                        f'💡 تلگرام نمی‌تواند فایل‌های بالای 1.5 GB را بپذیرد.\n\n'
+                        f'راه حل:\n'
+                        f'1️⃣ کیفیت پایین‌تری انتخاب کنید\n'
+                        f'2️⃣ ویدیو کوتاه‌تری انتخاب کنید\n'
+                        f'3️⃣ از کیفیت 480p یا 360p استفاده کنید',
+                        message.chat.id,
+                        message.message_id
+                    )
+                    return
+                else:
+                    # خطاهای دیگر را دوباره raise کن
+                    raise
                 
             finally:
                 upload_cancelled[0] = True
