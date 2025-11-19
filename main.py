@@ -25,7 +25,7 @@ ADMIN_ID = 6097462059
 # تنظیمات UserBot (Pyrogram) - برای ارسال فایل‌های بزرگ
 # برای دریافت API_ID و API_HASH به https://my.telegram.org/apps بروید
 USERBOT_API_ID = 30880278  # API ID خود را اینجا وارد کنید
-USERBOT_API_HASH = 1cdd9d628295a59fe9982ae52a208424  # API Hash خود را اینجا وارد کنید
+USERBOT_API_HASH = "1cdd9d628295a59fe9982ae52a208424"  # API Hash خود را اینجا وارد کنید
 USERBOT_SESSION_NAME = "userbot_session"  # نام session
 USE_USERBOT_FOR_LARGE_FILES = True  # استفاده از UserBot برای فایل‌های بالای 50MB
 USERBOT_THRESHOLD_MB = 50  # حداقل حجم فایل برای استفاده از UserBot (MB)
