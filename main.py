@@ -10,7 +10,7 @@ import shutil
 
 # توکن ربات تلگرام
 TELEGRAM_TOKEN = "8242200256:AAHWmaFY87Rcz5t-JLxZBV02m2iq-Z9oeg8"
-ADMIN_ID = 6097462059,126552002
+ADMIN_ID = 126552002
 
 # فایل‌های ذخیره
 SETTINGS_FILE = "bot_settings.json"
