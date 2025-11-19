@@ -198,35 +198,46 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
         asyncio.set_event_loop(loop)
         
         async def send():
-            temp_client = None
+            # استفاده از userbot_client اصلی (thread-safe در Pyrogram)
             try:
-                # ایجاد یک client جدید برای این thread با session name متفاوت
-                import threading
-                thread_id = threading.current_thread().ident
-                session_name = f"{USERBOT_SESSION_NAME}_{thread_id}"
+                # اطمینان از اینکه caption یک string است و به درستی encode شده
+                if caption and isinstance(caption, bytes):
+                    try:
+                        caption = caption.decode('utf-8')
+                    except:
+                        caption = caption.decode('utf-8', errors='ignore')
+                elif not caption:
+                    caption = ""
                 
-                temp_client = Client(
-                    session_name,
-                    api_id=USERBOT_API_ID,
-                    api_hash=USERBOT_API_HASH,
-                    no_updates=True  # برای جلوگیری از دریافت updates
-                )
+                # اطمینان از اینکه file_path یک string است
+                if isinstance(file_path, bytes):
+                    file_path = file_path.decode('utf-8', errors='ignore')
                 
-                await temp_client.start()
+                # تبدیل مسیر به absolute path
+                if not os.path.isabs(file_path):
+                    file_path = os.path.abspath(file_path)
+                
+                # بررسی وجود فایل
+                if not os.path.exists(file_path):
+                    return False, f"فایل پیدا نشد: {file_path}"
+                
+                # اطمینان از اینکه client متصل است
+                if not userbot_client.is_connected:
+                    await userbot_client.start()
                 
                 if is_video:
-                    await temp_client.send_video(
+                    await userbot_client.send_video(
                         chat_id=chat_id,
                         video=file_path,
-                        caption=caption,
+                        caption=caption if caption else None,
                         supports_streaming=True,
                         duration=duration if duration else None
                     )
                 else:
-                    await temp_client.send_document(
+                    await userbot_client.send_document(
                         chat_id=chat_id,
                         document=file_path,
-                        caption=caption
+                        caption=caption if caption else None
                     )
                 return True, "موفق"
                     
@@ -238,20 +249,21 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
                 if '413' in error_str or 'Request Entity Too Large' in error_str or 'entity too large' in error_str.lower():
                     return False, "413: فایل خیلی بزرگ است (بالای 2GB)"
                 return False, str(e)
+            except UnicodeDecodeError as e:
+                return False, f"خطای encoding: {str(e)} - لطفا caption یا مسیر فایل را بررسی کنید"
             except Exception as e:
                 error_str = str(e)
+                error_type = type(e).__name__
                 # بررسی خطای 413
                 if '413' in error_str or 'Request Entity Too Large' in error_str or 'entity too large' in error_str.lower():
                     return False, "413: فایل خیلی بزرگ است (بالای 2GB)"
-                return False, f"خطا: {str(e)}"
+                # بررسی خطای encoding
+                if 'codec' in error_str.lower() or 'decode' in error_str.lower() or 'utf-8' in error_str.lower():
+                    return False, f"خطای encoding ({error_type}): {error_str}"
+                return False, f"خطا ({error_type}): {str(e)}"
             finally:
-                # بستن client
-                if temp_client:
-                    try:
-                        await temp_client.stop()
-                        await temp_client.disconnect()
-                    except:
-                        pass
+                # نیازی به بستن client نیست چون از userbot_client اصلی استفاده می‌کنیم
+                pass
         
         try:
             result = loop.run_until_complete(send())
