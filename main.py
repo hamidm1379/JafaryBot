@@ -7,10 +7,28 @@ import time
 import threading
 import tempfile
 import shutil
+import asyncio
+
+# تلاش برای import کردن Pyrogram (اختیاری)
+try:
+    from pyrogram import Client
+    from pyrogram.errors import FloodWait, RPCError
+    PYROGRAM_AVAILABLE = True
+except ImportError:
+    PYROGRAM_AVAILABLE = False
+    print("⚠️ Pyrogram نصب نشده است. برای ارسال فایل‌های بزرگ، Pyrogram را نصب کنید: pip install pyrogram")
 
 # توکن ربات تلگرام
 TELEGRAM_TOKEN = "8212407334:AAFux0h8ZL-9lnNscQOQkeynMTKg-9lWH5o"
 ADMIN_ID = 6097462059
+
+# تنظیمات UserBot (Pyrogram) - برای ارسال فایل‌های بزرگ
+# برای دریافت API_ID و API_HASH به https://my.telegram.org/apps بروید
+USERBOT_API_ID = 30880278  # API ID خود را اینجا وارد کنید
+USERBOT_API_HASH = 1cdd9d628295a59fe9982ae52a208424  # API Hash خود را اینجا وارد کنید
+USERBOT_SESSION_NAME = "userbot_session"  # نام session
+USE_USERBOT_FOR_LARGE_FILES = True  # استفاده از UserBot برای فایل‌های بالای 50MB
+USERBOT_THRESHOLD_MB = 50  # حداقل حجم فایل برای استفاده از UserBot (MB)
 
 # فایل‌های ذخیره
 SETTINGS_FILE = "bot_settings.json"
@@ -19,6 +37,9 @@ STATS_FILE = "bot_stats.json"
 
 # ایجاد bot
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
+
+# کلاینت UserBot (Pyrogram) - در صورت نیاز ایجاد می‌شود
+userbot_client = None
 
 # دیکشنری برای ذخیره state کاربران
 user_states = {}
@@ -136,6 +157,74 @@ def cleanup_old_files(download_dir, max_age_hours=1):
                         pass
     except Exception as e:
         print(f'خطا در پاک‌سازی: {e}')
+
+# ==================== مدیریت UserBot (Pyrogram) ====================
+
+def init_userbot():
+    """ایجاد و راه‌اندازی UserBot"""
+    global userbot_client
+    
+    if not PYROGRAM_AVAILABLE:
+        return False
+    
+    if not USERBOT_API_ID or not USERBOT_API_HASH:
+        print("⚠️ API_ID یا API_HASH تنظیم نشده است. UserBot غیرفعال است.")
+        return False
+    
+    try:
+        userbot_client = Client(
+            USERBOT_SESSION_NAME,
+            api_id=USERBOT_API_ID,
+            api_hash=USERBOT_API_HASH
+        )
+        userbot_client.start()
+        print("✅ UserBot با موفقیت راه‌اندازی شد!")
+        return True
+    except Exception as e:
+        print(f"❌ خطا در راه‌اندازی UserBot: {e}")
+        return False
+
+def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration=None):
+    """ارسال فایل با استفاده از UserBot (Pyrogram)"""
+    global userbot_client
+    
+    if not PYROGRAM_AVAILABLE or not userbot_client:
+        return False, "UserBot در دسترس نیست"
+    
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        async def send():
+            try:
+                if is_video:
+                    sent_message = await userbot_client.send_video(
+                        chat_id=chat_id,
+                        video=file_path,
+                        caption=caption,
+                        supports_streaming=True,
+                        duration=duration if duration else None
+                    )
+                else:
+                    sent_message = await userbot_client.send_document(
+                        chat_id=chat_id,
+                        document=file_path,
+                        caption=caption
+                    )
+                return True, "موفق"
+            except FloodWait as e:
+                return False, f"FloodWait: {e.value} ثانیه"
+            except RPCError as e:
+                return False, str(e)
+            except Exception as e:
+                return False, str(e)
+        
+        success, message = loop.run_until_complete(send())
+        loop.close()
+        return success, message
+        
+    except Exception as e:
+        return False, str(e)
 
 # ==================== بررسی عضویت ====================
 
@@ -451,42 +540,76 @@ def download_video(url, message, quality='720p'):
             
             print(f'📤 شروع آپلود به صورت {"Document" if send_as_document else "Video"}...')
             
-            try:
-                # Timeout بر اساس حجم - برای فایل‌های بزرگ timeout بیشتر
-                if filesize > 500 * 1024 * 1024:  # بالای 500 MB
-                    upload_timeout = 1800  # 30 دقیقه
-                elif filesize > 100 * 1024 * 1024:  # بالای 100 MB
-                    upload_timeout = 1200  # 20 دقیقه
-                elif filesize > 50 * 1024 * 1024:  # بالای 50 MB
-                    upload_timeout = 900  # 15 دقیقه
-                else:
-                    upload_timeout = 600  # 10 دقیقه
-                
-                # استفاده از InputFile برای فایل‌های بزرگ
-                # برای فایل‌های بزرگ، از مسیر فایل مستقیم استفاده می‌کنیم
-                if send_as_document:
-                    # ارسال به صورت فایل (Document) - استفاده از مسیر فایل
-                    with open(filename, 'rb') as file:
-                        bot.send_document(
-                            message.chat.id,
-                            file,
-                            caption=f'📁 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n\n💡 فایل رو دانلود کنید و پخش کنید\n\n@DanceMoviebot',
-                            timeout=upload_timeout,
-                            visible_file_name=f'{title[:50]}.mp4'
-                        )
-                else:
-                    # ارسال به صورت ویدیو (پخش مستقیم)
-                    with open(filename, 'rb') as file:
-                        bot.send_video(
-                            message.chat.id,
-                            file,
-                            caption=f'🎬 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n@DanceMoviebot',
-                            supports_streaming=True,
-                            duration=duration if duration else None,
-                            timeout=upload_timeout
-                        )
-                
-                print('✅ آپلود موفق')
+            # تصمیم‌گیری: استفاده از UserBot یا ربات عادی
+            use_userbot = (
+                USE_USERBOT_FOR_LARGE_FILES and 
+                PYROGRAM_AVAILABLE and 
+                userbot_client and 
+                filesize > (USERBOT_THRESHOLD_MB * 1024 * 1024)
+            )
+            
+            if use_userbot:
+                print(f'🤖 استفاده از UserBot برای ارسال فایل {filesize / (1024*1024):.1f} MB')
+                try:
+                    caption = f'📁 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n\n💡 فایل رو دانلود کنید و پخش کنید\n\n@DanceMoviebot' if send_as_document else f'🎬 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n@DanceMoviebot'
+                    
+                    success, error_msg = send_file_with_userbot(
+                        message.chat.id,
+                        filename,
+                        caption,
+                        is_video=(not send_as_document),
+                        duration=duration if duration else None
+                    )
+                    
+                    if success:
+                        print('✅ آپلود موفق با UserBot')
+                    else:
+                        print(f'⚠️ خطا در ارسال با UserBot: {error_msg}')
+                        print('🔄 تلاش با ربات عادی...')
+                        use_userbot = False  # fallback به ربات عادی
+                except Exception as e:
+                    print(f'⚠️ خطا در UserBot: {e}')
+                    print('🔄 تلاش با ربات عادی...')
+                    use_userbot = False
+            
+            if not use_userbot:
+                # استفاده از ربات عادی (pyTelegramBotAPI)
+                try:
+                    # Timeout بر اساس حجم - برای فایل‌های بزرگ timeout بیشتر
+                    if filesize > 500 * 1024 * 1024:  # بالای 500 MB
+                        upload_timeout = 1800  # 30 دقیقه
+                    elif filesize > 100 * 1024 * 1024:  # بالای 100 MB
+                        upload_timeout = 1200  # 20 دقیقه
+                    elif filesize > 50 * 1024 * 1024:  # بالای 50 MB
+                        upload_timeout = 900  # 15 دقیقه
+                    else:
+                        upload_timeout = 600  # 10 دقیقه
+                    
+                    # استفاده از InputFile برای فایل‌های بزرگ
+                    # برای فایل‌های بزرگ، از مسیر فایل مستقیم استفاده می‌کنیم
+                    if send_as_document:
+                        # ارسال به صورت فایل (Document) - استفاده از مسیر فایل
+                        with open(filename, 'rb') as file:
+                            bot.send_document(
+                                message.chat.id,
+                                file,
+                                caption=f'📁 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n\n💡 فایل رو دانلود کنید و پخش کنید\n\n@DanceMoviebot',
+                                timeout=upload_timeout,
+                                visible_file_name=f'{title[:50]}.mp4'
+                            )
+                    else:
+                        # ارسال به صورت ویدیو (پخش مستقیم)
+                        with open(filename, 'rb') as file:
+                            bot.send_video(
+                                message.chat.id,
+                                file,
+                                caption=f'🎬 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n@DanceMoviebot',
+                                supports_streaming=True,
+                                duration=duration if duration else None,
+                                timeout=upload_timeout
+                            )
+                    
+                    print('✅ آپلود موفق')
                 
             except Exception as upload_error:
                 error_str = str(upload_error)
@@ -1396,6 +1519,18 @@ def main():
         print('💾 مدیریت فایل بهبود یافته!')
         print('📦 پشتیبانی از فایل‌های تا 2GB!')
         
+        # راه‌اندازی UserBot (اختیاری)
+        if USE_USERBOT_FOR_LARGE_FILES:
+            print('\n🤖 در حال راه‌اندازی UserBot...')
+            if init_userbot():
+                print('✅ UserBot فعال است - فایل‌های بزرگ با UserBot ارسال می‌شوند')
+            else:
+                print('⚠️ UserBot غیرفعال است - از ربات عادی استفاده می‌شود')
+                print('💡 برای فعال‌سازی UserBot:')
+                print('   1. pip install pyrogram')
+                print('   2. API_ID و API_HASH را از https://my.telegram.org/apps دریافت کنید')
+                print('   3. USERBOT_API_ID و USERBOT_API_HASH را در کد تنظیم کنید')
+        
         bot.infinity_polling(timeout=60, long_polling_timeout=60)
     except Exception as e:
         print(f'❌ خطا: {e}')
@@ -1403,8 +1538,9 @@ def main():
         print('1️⃣ نصب کتابخانه‌ها:')
         print('   pip3 install pyTelegramBotAPI --user')
         print('   pip3 install yt-dlp --user')
+        print('   pip3 install pyrogram --user  # برای UserBot (اختیاری)')
         print('2️⃣ اجرای ربات:')
-        print('   python3 bot.py')
+        print('   python3 main.py')
 
 if __name__ == '__main__':
     main()
