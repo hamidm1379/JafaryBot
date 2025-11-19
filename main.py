@@ -265,142 +265,287 @@ def search_music_video(query_text):
 # ==================== دانلود ====================
 
 def download_video(url, message, quality='720p'):
-    """دانلود ویدیو با ارسال هوشمند"""
+    """دانلود ویدیو با ارسال هوشمند (Video/Document)"""
     filename = None
     try:
-        # ... (کدهای قبلی تا filesize)
+        # تشخیص user_id
+        if hasattr(message, 'from_user'):
+            user_id = message.from_user.id
+        else:
+            chat_id = message.chat.id
+            user_id = None
+            for uid, data in user_data.items():
+                if data.get('download_user_id') and chat_id:
+                    user_id = uid
+                    break
+            if not user_id:
+                user_id = chat_id
         
-        filesize = os.path.getsize(filename)
-        print(f'📊 حجم فایل: {filesize / (1024*1024):.2f} MB')
+        # انتخاب فرمت بر اساس کیفیت
+        if quality == '2160p':
+            format_str = 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]'
+        elif quality == '1080p':
+            format_str = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]'
+        elif quality == '720p':
+            format_str = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]'
+        elif quality == '480p':
+            format_str = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]'
+        elif quality == '360p':
+            format_str = 'bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]'
+        else:
+            format_str = 'best[height<=720]'
         
-        # محدودیت تلگرام: 2GB
-        max_size = 2000 * 1024 * 1024
+        last_update_time = [0]
+        download_started = [False]
         
-        if filesize > max_size:
-            os.remove(filename)
-            bot.edit_message_text(
-                f'❌ حجم فایل بیش از 2GB!\n\n'
-                f'📹 {title}\n'
-                f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                'لطفا کیفیت پایین‌تری انتخاب کنید.',
-                message.chat.id,
-                message.message_id
-            )
-            return
-        
-        # تصمیم‌گیری هوشمند: Video یا Document
-        send_as_document = filesize > 50 * 1024 * 1024  # بالای 50MB
-        
-        # هشدار برای فایل‌های بزرگ
-        if send_as_document:
+        def progress_hook(d):
             try:
+                current_time = time.time()
+                if current_time - last_update_time[0] < 2:
+                    return
+                last_update_time[0] = current_time
+                
+                if d['status'] == 'downloading':
+                    download_started[0] = True
+                    downloaded = d.get('downloaded_bytes', 0)
+                    total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+                    speed = d.get('speed', 0)
+                    eta = d.get('eta', 0)
+                    
+                    if total > 0:
+                        percent = (downloaded / total) * 100
+                        filled = int(percent / 5)
+                        bar = '█' * filled + '░' * (20 - filled)
+                        downloaded_mb = downloaded / (1024 * 1024)
+                        total_mb = total / (1024 * 1024)
+                        speed_mb = (speed / (1024 * 1024)) if speed else 0
+                        eta_str = f"{eta}s" if eta else "..."
+                        
+                        text = (
+                            f"🎬 در حال دانلود...\n\n"
+                            f"{bar} {percent:.1f}%\n\n"
+                            f"📊 {downloaded_mb:.1f} MB / {total_mb:.1f} MB\n"
+                            f"⚡️ {speed_mb:.1f} MB/s\n"
+                            f"⏱ باقیمانده: {eta_str}"
+                        )
+                        
+                        try:
+                            bot.edit_message_text(text, message.chat.id, message.message_id)
+                        except:
+                            pass
+            except:
+                pass
+
+        # دریافت مسیر دانلود
+        download_dir = get_download_path()
+        
+        # پاک‌سازی فایل‌های قدیمی
+        cleanup_old_files(download_dir)
+        
+        print(f'📁 مسیر دانلود: {download_dir}')
+
+        ydl_opts = {
+            'format': format_str,
+            'outtmpl': os.path.join(download_dir, '%(id)s.%(ext)s'),
+            'noplaylist': True,
+            'quiet': True,
+            'no_warnings': True,
+            'nocheckcertificate': True,
+            'no_check_certificate': True,
+            'geo_bypass': True,
+            'socket_timeout': 60,
+            'retries': 10,
+            'fragment_retries': 10,
+            'progress_hooks': [progress_hook],
+        }
+        
+        if os.path.exists('cookies.txt'):
+            ydl_opts['cookiefile'] = 'cookies.txt'
+        
+        print('📥 شروع دانلود...')
+        
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+            title = info.get('title', 'ویدیو')
+            duration = info.get('duration', 0)
+            
+            print(f'✅ دانلود کامل: {filename}')
+            
+            # بررسی وجود فایل
+            if not os.path.exists(filename):
+                raise Exception(f'فایل دانلود نشد: {filename}')
+            
+            filesize = os.path.getsize(filename)
+            print(f'📊 حجم فایل: {filesize / (1024*1024):.2f} MB')
+            
+            # محدودیت تلگرام: 2000 مگابایت برای ربات‌ها
+            max_size = 2000 * 1024 * 1024
+            
+            if filesize > max_size:
+                os.remove(filename)
                 bot.edit_message_text(
-                    f'📁 فایل بزرگ است!\n\n'
-                    f'📹 {title[:50]}...\n'
+                    f'❌ حجم فایل بیش از 2GB!\n\n'
+                    f'📹 {title}\n'
                     f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                    f'💡 به صورت فایل ارسال میشه\n'
-                    f'⏳ چند دقیقه صبر کنید...',
+                    '💡 محدودیت تلگرام برای ربات‌ها 2GB است.\n'
+                    'لطفا کیفیت پایین‌تری انتخاب کنید.',
                     message.chat.id,
                     message.message_id
                 )
-                time.sleep(2)
-            except:
-                pass
-        
-        # انیمیشن آپلود
-        upload_cancelled = [False]
-        
-        def upload_animation():
-            animations = ['⬆️', '⬆️⬆️', '⬆️⬆️⬆️', '⬆️⬆️⬆️⬆️']
-            idx = 0
-            start_time = time.time()
+                return
             
-            while not upload_cancelled[0]:
+            # تصمیم‌گیری هوشمند: Video یا Document
+            # فایل‌های بالای 50MB به صورت Document ارسال میشن
+            send_as_document = filesize > 50 * 1024 * 1024
+            
+            # هشدار برای فایل‌های بزرگ
+            if send_as_document:
                 try:
-                    elapsed = int(time.time() - start_time)
-                    file_type = "📁 فایل" if send_as_document else "🎬 ویدیو"
                     bot.edit_message_text(
-                        f'✅ دانلود کامل!\n\n'
-                        f'{file_type}: {title[:40]}...\n'
-                        f'📊 {filesize / (1024*1024):.1f} MB\n\n'
-                        f'📤 در حال ارسال {animations[idx % 4]}\n'
-                        f'⏱ زمان: {elapsed}s',
+                        f'📁 فایل بزرگ است!\n\n'
+                        f'📹 {title[:50]}...\n'
+                        f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                        f'💡 به صورت فایل ارسال میشه\n'
+                        f'⏳ چند دقیقه صبر کنید...',
                         message.chat.id,
                         message.message_id
                     )
+                    time.sleep(2)
                 except:
                     pass
-                idx += 1
-                time.sleep(1)
-        
-        upload_thread = threading.Thread(target=upload_animation)
-        upload_thread.daemon = True
-        upload_thread.start()
-        
-        upload_start_time = time.time()
-        print(f'📤 شروع آپلود به صورت {"Document" if send_as_document else "Video"}...')
-        
-        try:
-            # Timeout بر اساس حجم
-            upload_timeout = 600 if filesize > 100 * 1024 * 1024 else 300
             
-            with open(filename, 'rb') as file:
-                if send_as_document:
-                    # ارسال به صورت فایل (Document)
-                    bot.send_document(
-                        message.chat.id,
-                        file,
-                        caption=f'📁 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n\n💡 فایل رو دانلود کنید و پخش کنید\n\n@DanceMoviebot',
-                        timeout=upload_timeout
-                    )
-                else:
-                    # ارسال به صورت ویدیو (پخش مستقیم)
-                    bot.send_video(
-                        message.chat.id,
-                        file,
-                        caption=f'🎬 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n@DanceMoviebot',
-                        supports_streaming=True,
-                        duration=duration if duration else None,
-                        timeout=upload_timeout
-                    )
+            upload_cancelled = [False]
             
-            print('✅ آپلود موفق')
+            def upload_animation():
+                animations = ['⬆️', '⬆️⬆️', '⬆️⬆️⬆️', '⬆️⬆️⬆️⬆️']
+                idx = 0
+                start_time = time.time()
+                
+                while not upload_cancelled[0]:
+                    try:
+                        elapsed = int(time.time() - start_time)
+                        file_type = "📁 فایل" if send_as_document else "🎬 ویدیو"
+                        bot.edit_message_text(
+                            f'✅ دانلود کامل!\n\n'
+                            f'{file_type}: {title[:40]}...\n'
+                            f'📊 {filesize / (1024*1024):.1f} MB\n\n'
+                            f'📤 در حال ارسال {animations[idx % 4]}\n'
+                            f'⏱ زمان: {elapsed}s',
+                            message.chat.id,
+                            message.message_id
+                        )
+                    except:
+                        pass
+                    idx += 1
+                    time.sleep(1)
             
-        finally:
-            upload_cancelled[0] = True
-            time.sleep(0.5)
+            upload_thread = threading.Thread(target=upload_animation)
+            upload_thread.daemon = True
+            upload_thread.start()
+            
+            upload_start_time = time.time()
+            
+            print(f'📤 شروع آپلود به صورت {"Document" if send_as_document else "Video"}...')
+            
+            try:
+                # Timeout بر اساس حجم
+                upload_timeout = 600 if filesize > 100 * 1024 * 1024 else 300
+                
+                with open(filename, 'rb') as file:
+                    if send_as_document:
+                        # ارسال به صورت فایل (Document)
+                        bot.send_document(
+                            message.chat.id,
+                            file,
+                            caption=f'📁 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n\n💡 فایل رو دانلود کنید و پخش کنید\n\n@DanceMoviebot',
+                            timeout=upload_timeout,
+                            visible_file_name=f'{title[:50]}.mp4'
+                        )
+                    else:
+                        # ارسال به صورت ویدیو (پخش مستقیم)
+                        bot.send_video(
+                            message.chat.id,
+                            file,
+                            caption=f'🎬 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n@DanceMoviebot',
+                            supports_streaming=True,
+                            duration=duration if duration else None,
+                            timeout=upload_timeout
+                        )
+                
+                print('✅ آپلود موفق')
+                
+            finally:
+                upload_cancelled[0] = True
+                time.sleep(0.5)
+            
+            upload_time = int(time.time() - upload_start_time)
+            
+            # پاک کردن فایل
+            try:
+                if filename and os.path.exists(filename):
+                    os.remove(filename)
+                    print('🗑 فایل پاک شد')
+            except Exception as e:
+                print(f'خطا در پاک کردن فایل: {e}')
+            
+            try:
+                file_type_emoji = "📁" if send_as_document else "🎬"
+                bot.edit_message_text(
+                    f'✅ ارسال موفق!\n\n'
+                    f'{file_type_emoji} {title[:50]}...\n'
+                    f'📊 {filesize / (1024*1024):.1f} MB\n'
+                    f'⏱ زمان آپلود: {upload_time}s',
+                    message.chat.id,
+                    message.message_id
+                )
+                
+                time.sleep(2)
+                bot.delete_message(message.chat.id, message.message_id)
+            except:
+                pass
+            
+            increment_download()
+            
+            show_main_menu(message.chat.id, user_id)
+            
+    except Exception as e:
+        error_message = str(e)
+        print(f'❌ خطا در دانلود: {error_message}')
         
-        upload_time = int(time.time() - upload_start_time)
-        
-        # پاک کردن فایل
+        # پاک کردن فایل در صورت خطا
         try:
             if filename and os.path.exists(filename):
                 os.remove(filename)
-                print('🗑 فایل پاک شد')
-        except Exception as e:
-            print(f'خطا در پاک کردن فایل: {e}')
-        
-        try:
-            file_type_emoji = "📁" if send_as_document else "🎬"
-            bot.edit_message_text(
-                f'✅ ارسال موفق!\n\n'
-                f'{file_type_emoji} {title[:50]}...\n'
-                f'📊 {filesize / (1024*1024):.1f} MB\n'
-                f'⏱ زمان آپلود: {upload_time}s',
-                message.chat.id,
-                message.message_id
-            )
-            
-            time.sleep(2)
-            bot.delete_message(message.chat.id, message.message_id)
+                print('🗑 فایل ناقص پاک شد')
         except:
             pass
         
-        increment_download()
-        show_main_menu(message.chat.id, user_id)
-        
-    except Exception as e:
-
+        if any(x in error_message.lower() for x in ['timeout', 'timed out', 'connection', 'proxy', 'tunnel']):
+            try:
+                bot.edit_message_text(
+                    f'❌ خطا در دانلود!\n\n'
+                    f'💡 احتمالاً مشکل از اتصال به اینترنت است.\n\n'
+                    f'راه حل:\n'
+                    f'1️⃣ لینک دیگری امتحان کنید\n'
+                    f'2️⃣ کیفیت پایین‌تر انتخاب کنید\n'
+                    f'3️⃣ چند دقیقه دیگر تلاش کنید',
+                    message.chat.id,
+                    message.message_id
+                )
+            except:
+                pass
+        else:
+            try:
+                bot.edit_message_text(
+                    f'❌ خطا در دانلود!\n\n'
+                    f'جزئیات: {error_message[:100]}\n\n'
+                    f'لطفا دوباره تلاش کنید.',
+                    message.chat.id,
+                    message.message_id
+                )
+            except:
+                pass
 
 # ==================== کیبوردها ====================
 
