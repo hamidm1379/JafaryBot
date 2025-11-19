@@ -563,6 +563,7 @@ def download_video(url, message, quality='720p'):
                     
                     if success:
                         print('✅ آپلود موفق با UserBot')
+                        upload_cancelled[0] = True
                     else:
                         print(f'⚠️ خطا در ارسال با UserBot: {error_msg}')
                         print('🔄 تلاش با ربات عادی...')
@@ -611,61 +612,61 @@ def download_video(url, message, quality='720p'):
                     
                     print('✅ آپلود موفق')
                 
-            except Exception as upload_error:
-                error_str = str(upload_error)
-                error_code = getattr(upload_error, 'error_code', None)
-                
-                # لاگ خطا برای دیباگ
-                print(f'❌ خطا در آپلود: {error_str}')
-                print(f'📊 کد خطا: {error_code}')
-                print(f'📁 حجم فایل: {filesize / (1024*1024):.2f} MB')
-                
-                upload_cancelled[0] = True
-                
-                # بررسی خطای 413 (Request Entity Too Large)
-                if '413' in error_str or (error_code and error_code == 413) or 'Request Entity Too Large' in error_str or 'entity too large' in error_str.lower():
-                    try:
-                        if filename and os.path.exists(filename):
-                            os.remove(filename)
-                    except:
-                        pass
+                except Exception as upload_error:
+                    error_str = str(upload_error)
+                    error_code = getattr(upload_error, 'error_code', None)
                     
-                    bot.edit_message_text(
-                        f'❌ خطا: فایل خیلی بزرگ است!\n\n'
-                        f'📹 {title[:50]}...\n'
-                        f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                        f'💡 تلگرام نمی‌تواند این فایل را بپذیرد.\n\n'
-                        f'راه حل:\n'
-                        f'1️⃣ کیفیت پایین‌تری انتخاب کنید (480p یا 360p)\n'
-                        f'2️⃣ ویدیو کوتاه‌تری انتخاب کنید\n'
-                        f'3️⃣ چند دقیقه صبر کنید و دوباره تلاش کنید',
-                        message.chat.id,
-                        message.message_id
-                    )
-                    return
-                else:
-                    # برای خطاهای دیگر، پیام مناسب نمایش بده
-                    try:
-                        if filename and os.path.exists(filename):
-                            os.remove(filename)
-                    except:
-                        pass
+                    # لاگ خطا برای دیباگ
+                    print(f'❌ خطا در آپلود: {error_str}')
+                    print(f'📊 کد خطا: {error_code}')
+                    print(f'📁 حجم فایل: {filesize / (1024*1024):.2f} MB')
                     
-                    # نمایش پیام خطا با جزئیات
-                    error_msg = error_str[:200] if len(error_str) > 200 else error_str
-                    bot.edit_message_text(
-                        f'❌ خطا در ارسال فایل!\n\n'
-                        f'📹 {title[:50]}...\n'
-                        f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                        f'💡 خطا: {error_msg}\n\n'
-                        f'راه حل:\n'
-                        f'1️⃣ چند دقیقه صبر کنید و دوباره تلاش کنید\n'
-                        f'2️⃣ کیفیت پایین‌تری انتخاب کنید\n'
-                        f'3️⃣ لینک دیگری امتحان کنید',
-                        message.chat.id,
-                        message.message_id
-                    )
-                    return
+                    upload_cancelled[0] = True
+                    
+                    # بررسی خطای 413 (Request Entity Too Large)
+                    if '413' in error_str or (error_code and error_code == 413) or 'Request Entity Too Large' in error_str or 'entity too large' in error_str.lower():
+                        try:
+                            if filename and os.path.exists(filename):
+                                os.remove(filename)
+                        except:
+                            pass
+                        
+                        bot.edit_message_text(
+                            f'❌ خطا: فایل خیلی بزرگ است!\n\n'
+                            f'📹 {title[:50]}...\n'
+                            f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                            f'💡 تلگرام نمی‌تواند این فایل را بپذیرد.\n\n'
+                            f'راه حل:\n'
+                            f'1️⃣ کیفیت پایین‌تری انتخاب کنید (480p یا 360p)\n'
+                            f'2️⃣ ویدیو کوتاه‌تری انتخاب کنید\n'
+                            f'3️⃣ چند دقیقه صبر کنید و دوباره تلاش کنید',
+                            message.chat.id,
+                            message.message_id
+                        )
+                        return
+                    else:
+                        # برای خطاهای دیگر، پیام مناسب نمایش بده
+                        try:
+                            if filename and os.path.exists(filename):
+                                os.remove(filename)
+                        except:
+                            pass
+                        
+                        # نمایش پیام خطا با جزئیات
+                        error_msg = error_str[:200] if len(error_str) > 200 else error_str
+                        bot.edit_message_text(
+                            f'❌ خطا در ارسال فایل!\n\n'
+                            f'📹 {title[:50]}...\n'
+                            f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                            f'💡 خطا: {error_msg}\n\n'
+                            f'راه حل:\n'
+                            f'1️⃣ چند دقیقه صبر کنید و دوباره تلاش کنید\n'
+                            f'2️⃣ کیفیت پایین‌تری انتخاب کنید\n'
+                            f'3️⃣ لینک دیگری امتحان کنید',
+                            message.chat.id,
+                            message.message_id
+                        )
+                        return
                 
             finally:
                 upload_cancelled[0] = True
