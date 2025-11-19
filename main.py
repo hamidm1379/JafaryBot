@@ -551,25 +551,41 @@ def download_video(url, message, quality='720p'):
                 userbot_client
             )
             
-            if not use_userbot_check:
-                # اگر UserBot فعال نیست، محدودیت 2GB برای document
-                max_size = 2000 * 1024 * 1024  # 2GB
-            else:
-                # با UserBot می‌توانیم تا 2GB ارسال کنیم
-                max_size = 2000 * 1024 * 1024  # 2GB
+            # محدودیت تلگرام: 2GB برای Document، 50MB برای Video (با ربات عادی)
+            # با UserBot: تا 2GB برای Video
+            max_size_document = 2000 * 1024 * 1024  # 2GB برای Document
+            max_size_video_bot = 50 * 1024 * 1024  # 50MB برای Video با ربات عادی
+            max_size_video_userbot = 2000 * 1024 * 1024  # 2GB برای Video با UserBot
             
-            if filesize > max_size:
-                os.remove(filename)
-                bot.edit_message_text(
-                    f'❌ حجم فایل بیش از 2 GB!\n\n'
-                    f'📹 {title}\n'
-                    f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                    '💡 محدودیت تلگرام برای ارسال فایل 2 GB است.\n'
-                    'لطفا کیفیت پایین‌تری انتخاب کنید.',
-                    message.chat.id,
-                    message.message_id
-                )
-                return
+            # بررسی محدودیت حجم
+            if use_userbot_check:
+                # با UserBot
+                if filesize > max_size_video_userbot:
+                    os.remove(filename)
+                    bot.edit_message_text(
+                        f'❌ حجم فایل بیش از 2 GB!\n\n'
+                        f'📹 {title}\n'
+                        f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                        '💡 محدودیت تلگرام برای ارسال فایل 2 GB است.\n'
+                        'لطفا کیفیت پایین‌تری انتخاب کنید.',
+                        message.chat.id,
+                        message.message_id
+                    )
+                    return
+            else:
+                # با ربات عادی - بررسی برای Document
+                if filesize > max_size_document:
+                    os.remove(filename)
+                    bot.edit_message_text(
+                        f'❌ حجم فایل بیش از 2 GB!\n\n'
+                        f'📹 {title}\n'
+                        f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                        '💡 محدودیت تلگرام برای ارسال فایل 2 GB است.\n'
+                        'لطفا کیفیت پایین‌تری انتخاب کنید یا UserBot را فعال کنید.',
+                        message.chat.id,
+                        message.message_id
+                    )
+                    return
             
             # تصمیم‌گیری: استفاده از UserBot یا ربات عادی
             # استفاده از UserBot برای همه فایل‌ها (بدون محدودیت حجم)
@@ -740,8 +756,11 @@ def download_video(url, message, quality='720p'):
                     
                     # استفاده از InputFile برای فایل‌های بزرگ
                     # برای فایل‌های بزرگ، از مسیر فایل مستقیم استفاده می‌کنیم
+                    print(f'📤 آماده ارسال: send_as_document={send_as_document}, filesize={filesize / (1024*1024):.2f} MB')
+                    
                     if send_as_document:
                         # ارسال به صورت فایل (Document) - استفاده از مسیر فایل
+                        print(f'📁 ارسال به صورت Document...')
                         with open(filename, 'rb') as file:
                             bot.send_document(
                                 message.chat.id,
@@ -757,6 +776,7 @@ def download_video(url, message, quality='720p'):
                             print(f'⚠️ فایل {filesize / (1024*1024):.1f} MB است - تغییر به Document')
                             send_as_document = True
                             # ارسال به صورت Document
+                            print(f'📁 ارسال به صورت Document (بعد از بررسی نهایی)...')
                             with open(filename, 'rb') as file:
                                 bot.send_document(
                                     message.chat.id,
@@ -767,6 +787,7 @@ def download_video(url, message, quality='720p'):
                                 )
                         else:
                             # ارسال به صورت ویدیو (پخش مستقیم)
+                            print(f'🎬 ارسال به صورت Video...')
                             with open(filename, 'rb') as file:
                                 bot.send_video(
                                     message.chat.id,
@@ -787,6 +808,9 @@ def download_video(url, message, quality='720p'):
                     print(f'❌ خطا در آپلود: {error_str}')
                     print(f'📊 کد خطا: {error_code}')
                     print(f'📁 حجم فایل: {filesize / (1024*1024):.2f} MB')
+                    print(f'📊 send_as_document: {send_as_document}')
+                    print(f'📊 use_userbot: {use_userbot}')
+                    print(f'📊 فایل: {filename}')
                     
                     upload_cancelled[0] = True
                     
