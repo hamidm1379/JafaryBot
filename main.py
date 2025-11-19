@@ -201,13 +201,14 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
             # استفاده از userbot_client اصلی (thread-safe در Pyrogram)
             try:
                 # اطمینان از اینکه caption یک string است و به درستی encode شده
-                if caption and isinstance(caption, bytes):
+                caption_str = caption
+                if caption_str and isinstance(caption_str, bytes):
                     try:
-                        caption = caption.decode('utf-8')
+                        caption_str = caption_str.decode('utf-8')
                     except:
-                        caption = caption.decode('utf-8', errors='ignore')
-                elif not caption:
-                    caption = ""
+                        caption_str = caption_str.decode('utf-8', errors='ignore')
+                elif not caption_str:
+                    caption_str = ""
                 
                 # اطمینان از اینکه file_path یک string است
                 if isinstance(file_path, bytes):
@@ -229,7 +230,7 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
                     await userbot_client.send_video(
                         chat_id=chat_id,
                         video=file_path,
-                        caption=caption if caption else None,
+                        caption=caption_str if caption_str else None,
                         supports_streaming=True,
                         duration=duration if duration else None
                     )
@@ -237,7 +238,7 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
                     await userbot_client.send_document(
                         chat_id=chat_id,
                         document=file_path,
-                        caption=caption if caption else None
+                        caption=caption_str if caption_str else None
                     )
                 return True, "موفق"
                     
