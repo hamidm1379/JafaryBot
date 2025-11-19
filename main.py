@@ -457,12 +457,16 @@ def download_video(url, message, quality='720p'):
                     upload_timeout = 1800  # 30 دقیقه
                 elif filesize > 100 * 1024 * 1024:  # بالای 100 MB
                     upload_timeout = 1200  # 20 دقیقه
+                elif filesize > 50 * 1024 * 1024:  # بالای 50 MB
+                    upload_timeout = 900  # 15 دقیقه
                 else:
                     upload_timeout = 600  # 10 دقیقه
                 
-                with open(filename, 'rb') as file:
-                    if send_as_document:
-                        # ارسال به صورت فایل (Document)
+                # استفاده از InputFile برای فایل‌های بزرگ
+                # برای فایل‌های بزرگ، از مسیر فایل مستقیم استفاده می‌کنیم
+                if send_as_document:
+                    # ارسال به صورت فایل (Document) - استفاده از مسیر فایل
+                    with open(filename, 'rb') as file:
                         bot.send_document(
                             message.chat.id,
                             file,
@@ -470,8 +474,9 @@ def download_video(url, message, quality='720p'):
                             timeout=upload_timeout,
                             visible_file_name=f'{title[:50]}.mp4'
                         )
-                    else:
-                        # ارسال به صورت ویدیو (پخش مستقیم)
+                else:
+                    # ارسال به صورت ویدیو (پخش مستقیم)
+                    with open(filename, 'rb') as file:
                         bot.send_video(
                             message.chat.id,
                             file,
@@ -487,9 +492,15 @@ def download_video(url, message, quality='720p'):
                 error_str = str(upload_error)
                 error_code = getattr(upload_error, 'error_code', None)
                 
+                # لاگ خطا برای دیباگ
+                print(f'❌ خطا در آپلود: {error_str}')
+                print(f'📊 کد خطا: {error_code}')
+                print(f'📁 حجم فایل: {filesize / (1024*1024):.2f} MB')
+                
+                upload_cancelled[0] = True
+                
                 # بررسی خطای 413 (Request Entity Too Large)
-                if '413' in error_str or (error_code and error_code == 413) or 'Request Entity Too Large' in error_str:
-                    upload_cancelled[0] = True
+                if '413' in error_str or (error_code and error_code == 413) or 'Request Entity Too Large' in error_str or 'entity too large' in error_str.lower():
                     try:
                         if filename and os.path.exists(filename):
                             os.remove(filename)
@@ -500,18 +511,38 @@ def download_video(url, message, quality='720p'):
                         f'❌ خطا: فایل خیلی بزرگ است!\n\n'
                         f'📹 {title[:50]}...\n'
                         f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                        f'💡 تلگرام نمی‌تواند فایل‌های بالای 1.5 GB را بپذیرد.\n\n'
+                        f'💡 تلگرام نمی‌تواند این فایل را بپذیرد.\n\n'
                         f'راه حل:\n'
-                        f'1️⃣ کیفیت پایین‌تری انتخاب کنید\n'
+                        f'1️⃣ کیفیت پایین‌تری انتخاب کنید (480p یا 360p)\n'
                         f'2️⃣ ویدیو کوتاه‌تری انتخاب کنید\n'
-                        f'3️⃣ از کیفیت 480p یا 360p استفاده کنید',
+                        f'3️⃣ چند دقیقه صبر کنید و دوباره تلاش کنید',
                         message.chat.id,
                         message.message_id
                     )
                     return
                 else:
-                    # خطاهای دیگر را دوباره raise کن
-                    raise
+                    # برای خطاهای دیگر، پیام مناسب نمایش بده
+                    try:
+                        if filename and os.path.exists(filename):
+                            os.remove(filename)
+                    except:
+                        pass
+                    
+                    # نمایش پیام خطا با جزئیات
+                    error_msg = error_str[:200] if len(error_str) > 200 else error_str
+                    bot.edit_message_text(
+                        f'❌ خطا در ارسال فایل!\n\n'
+                        f'📹 {title[:50]}...\n'
+                        f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                        f'💡 خطا: {error_msg}\n\n'
+                        f'راه حل:\n'
+                        f'1️⃣ چند دقیقه صبر کنید و دوباره تلاش کنید\n'
+                        f'2️⃣ کیفیت پایین‌تری انتخاب کنید\n'
+                        f'3️⃣ لینک دیگری امتحان کنید',
+                        message.chat.id,
+                        message.message_id
+                    )
+                    return
                 
             finally:
                 upload_cancelled[0] = True
