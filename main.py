@@ -233,8 +233,16 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
             except FloodWait as e:
                 return False, f"FloodWait: {e.value} ثانیه"
             except RPCError as e:
+                error_str = str(e)
+                # بررسی خطای 413
+                if '413' in error_str or 'Request Entity Too Large' in error_str or 'entity too large' in error_str.lower():
+                    return False, "413: فایل خیلی بزرگ است (بالای 2GB)"
                 return False, str(e)
             except Exception as e:
+                error_str = str(e)
+                # بررسی خطای 413
+                if '413' in error_str or 'Request Entity Too Large' in error_str or 'entity too large' in error_str.lower():
+                    return False, "413: فایل خیلی بزرگ است (بالای 2GB)"
                 return False, f"خطا: {str(e)}"
             finally:
                 # بستن client
@@ -522,17 +530,29 @@ def download_video(url, message, quality='720p'):
             filesize = os.path.getsize(filename)
             print(f'📊 حجم فایل: {filesize / (1024*1024):.2f} MB')
             
-            # محدودیت تلگرام: 1500 مگابایت (1.5 GB) برای جلوگیری از خطای 413
-            # در عمل تلگرام ممکن است فایل‌های بالای 1.5 GB را رد کند
-            max_size = 1500 * 1024 * 1024
+            # بررسی محدودیت حجم
+            # با UserBot: تا 2GB
+            # با ربات عادی: تا 50MB برای ویدیو، تا 2GB برای document
+            use_userbot_check = (
+                USE_USERBOT_FOR_LARGE_FILES and 
+                PYROGRAM_AVAILABLE and 
+                userbot_client
+            )
+            
+            if not use_userbot_check:
+                # اگر UserBot فعال نیست، محدودیت 2GB برای document
+                max_size = 2000 * 1024 * 1024  # 2GB
+            else:
+                # با UserBot می‌توانیم تا 2GB ارسال کنیم
+                max_size = 2000 * 1024 * 1024  # 2GB
             
             if filesize > max_size:
                 os.remove(filename)
                 bot.edit_message_text(
-                    f'❌ حجم فایل بیش از 1.5 GB!\n\n'
+                    f'❌ حجم فایل بیش از 2 GB!\n\n'
                     f'📹 {title}\n'
                     f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                    '💡 محدودیت تلگرام برای ارسال فایل 1.5 GB است.\n'
+                    '💡 محدودیت تلگرام برای ارسال فایل 2 GB است.\n'
                     'لطفا کیفیت پایین‌تری انتخاب کنید.',
                     message.chat.id,
                     message.message_id
@@ -636,6 +656,8 @@ def download_video(url, message, quality='720p'):
             
             if use_userbot:
                 print(f'🤖 استفاده از UserBot برای ارسال فایل {filesize / (1024*1024):.1f} MB')
+                print(f'📊 UserBot client: {userbot_client is not None}')
+                print(f'📊 PYROGRAM_AVAILABLE: {PYROGRAM_AVAILABLE}')
                 try:
                     caption = f'📁 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n\n💡 فایل رو دانلود کنید و پخش کنید\n\n@DanceMoviebot' if send_as_document else f'🎬 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n@DanceMoviebot'
                     
@@ -652,12 +674,36 @@ def download_video(url, message, quality='720p'):
                         upload_cancelled[0] = True
                     else:
                         print(f'⚠️ خطا در ارسال با UserBot: {error_msg}')
+                        # اگر خطای 413 است، نیازی به fallback نیست
+                        if '413' in error_msg or 'خیلی بزرگ' in error_msg:
+                            upload_cancelled[0] = True
+                            try:
+                                bot.edit_message_text(
+                                    f'❌ خطا: فایل خیلی بزرگ است!\n\n'
+                                    f'📹 {title[:50]}...\n'
+                                    f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                                    f'💡 محدودیت تلگرام برای ارسال فایل 2GB است.\n\n'
+                                    f'راه حل:\n'
+                                    f'1️⃣ کیفیت پایین‌تری انتخاب کنید (480p یا 360p)\n'
+                                    f'2️⃣ ویدیو کوتاه‌تری انتخاب کنید\n'
+                                    f'3️⃣ فایل را به قسمت‌های کوچکتر تقسیم کنید',
+                                    message.chat.id,
+                                    message.message_id
+                                )
+                            except:
+                                pass
+                            return
                         print('🔄 تلاش با ربات عادی...')
                         use_userbot = False  # fallback به ربات عادی
                 except Exception as e:
                     print(f'⚠️ خطا در UserBot: {e}')
                     print('🔄 تلاش با ربات عادی...')
                     use_userbot = False
+            else:
+                print(f'⚠️ استفاده از ربات عادی برای ارسال فایل {filesize / (1024*1024):.1f} MB')
+                print(f'📊 UserBot client: {userbot_client is not None}')
+                print(f'📊 PYROGRAM_AVAILABLE: {PYROGRAM_AVAILABLE}')
+                print(f'📊 USE_USERBOT_FOR_LARGE_FILES: {USE_USERBOT_FOR_LARGE_FILES}')
             
             if not use_userbot:
                 # استفاده از ربات عادی (pyTelegramBotAPI)
