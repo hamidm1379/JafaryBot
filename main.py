@@ -6,29 +6,31 @@ import json
 import time
 import threading
 import tempfile
-import shutil
 import asyncio
 
-# تلاش برای import کردن Pyrogram (اختیاری)
+# Pyrogram imports
 try:
     from pyrogram import Client
     from pyrogram.errors import FloodWait, RPCError
     PYROGRAM_AVAILABLE = True
 except ImportError:
     PYROGRAM_AVAILABLE = False
-    print("⚠️ Pyrogram نصب نشده است. برای ارسال فایل‌های بزرگ، Pyrogram را نصب کنید: pip install pyrogram")
+    print("⚠️ Pyrogram نصب نشده است. برای ارسال فایل‌های بزرگ، Pyrogram را نصب کنید:")
+    print("pip install pyrogram")
+
+# ==================== تنظیمات ====================
 
 # توکن ربات تلگرام
 TELEGRAM_TOKEN = "8212407334:AAFux0h8ZL-9lnNscQOQkeynMTKg-9lWH5o"
 ADMIN_ID = 6097462059
 
-# تنظیمات UserBot (Pyrogram) - برای ارسال فایل‌های بزرگ
-# برای دریافت API_ID و API_HASH به https://my.telegram.org/apps بروید
-USERBOT_API_ID = 30880278  # API ID خود را اینجا وارد کنید
-USERBOT_API_HASH = "1cdd9d628295a59fe9982ae52a208424"  # API Hash خود را اینجا وارد کنید
-USERBOT_SESSION_NAME = "userbot_session"  # نام session
-USE_USERBOT_FOR_LARGE_FILES = True  # استفاده از UserBot برای فایل‌های بالای 50MB
-USERBOT_THRESHOLD_MB = 50  # حداقل حجم فایل برای استفاده از UserBot (MB)
+# تنظیمات UserBot (Pyrogram)
+USERBOT_API_ID = 30880278
+USERBOT_API_HASH = "1cdd9d628295a59fe9982ae52a208424"
+USERBOT_SESSION_NAME = "userbot_session"
+
+# استفاده از UserBot برای همه فایل‌ها (حتی زیر 50MB)
+USE_USERBOT_ALWAYS = True  # تغییر داده شده: همیشه از UserBot استفاده کن
 
 # فایل‌های ذخیره
 SETTINGS_FILE = "bot_settings.json"
@@ -38,7 +40,7 @@ STATS_FILE = "bot_stats.json"
 # ایجاد bot
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# کلاینت UserBot (Pyrogram) - در صورت نیاز ایجاد می‌شود
+# کلاینت UserBot
 userbot_client = None
 
 # دیکشنری برای ذخیره state کاربران
@@ -53,61 +55,51 @@ STATE_WAITING_CHANNEL_1 = 3
 STATE_WAITING_CHANNEL_2 = 4
 STATE_WAITING_AD_MEDIA = 5
 STATE_WAITING_AD_TEXT = 6
-STATE_WAITING_AD_USER_IDS = 7
 
 # ==================== توابع مدیریت فایل ====================
 
 def load_settings():
-    """بارگذاری تنظیمات"""
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     return {'channels': [], 'lock_enabled': False}
 
 def save_settings(settings):
-    """ذخیره تنظیمات"""
     with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
         json.dump(settings, f, ensure_ascii=False, indent=2)
 
 def load_users():
-    """بارگذاری لیست کاربران"""
     if os.path.exists(USERS_FILE):
         with open(USERS_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     return []
 
 def save_users(users):
-    """ذخیره لیست کاربران"""
     with open(USERS_FILE, 'w', encoding='utf-8') as f:
         json.dump(users, f, ensure_ascii=False, indent=2)
 
 def load_stats():
-    """بارگذاری آمار"""
     if os.path.exists(STATS_FILE):
         with open(STATS_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     return {'total_downloads': 0}
 
 def save_stats(stats):
-    """ذخیره آمار"""
     with open(STATS_FILE, 'w', encoding='utf-8') as f:
         json.dump(stats, f, ensure_ascii=False, indent=2)
 
 def increment_download():
-    """افزایش تعداد دانلودها"""
     stats = load_stats()
     stats['total_downloads'] = stats.get('total_downloads', 0) + 1
     save_stats(stats)
 
 def add_user(user_id):
-    """اضافه کردن کاربر جدید"""
     users = load_users()
     if user_id not in users:
         users.append(user_id)
         save_users(users)
 
 def normalize_channel_id(channel):
-    """تبدیل URL کانال به شناسه"""
     if channel.startswith('https://t.me/'):
         username = channel.replace('https://t.me/', '').strip('/')
         return f'@{username}'
@@ -120,25 +112,18 @@ def normalize_channel_id(channel):
     return channel
 
 def get_download_path():
-    """دریافت مسیر دانلود با اطمینان از وجود پوشه"""
-    # استفاده از پوشه موقت سیستم
     download_dir = os.path.join(tempfile.gettempdir(), 'bot_downloads')
-    
-    # اگر پوشه وجود نداشت ایجاد کن
     if not os.path.exists(download_dir):
         try:
             os.makedirs(download_dir, exist_ok=True)
             print(f'✅ پوشه دانلود ایجاد شد: {download_dir}')
         except Exception as e:
             print(f'❌ خطا در ایجاد پوشه: {e}')
-            # fallback به دایرکتوری جاری
             download_dir = os.path.join(os.getcwd(), 'downloads')
             os.makedirs(download_dir, exist_ok=True)
-    
     return download_dir
 
 def cleanup_old_files(download_dir, max_age_hours=1):
-    """پاک‌سازی فایل‌های قدیمی"""
     try:
         current_time = time.time()
         max_age_seconds = max_age_hours * 3600
@@ -161,14 +146,15 @@ def cleanup_old_files(download_dir, max_age_hours=1):
 # ==================== مدیریت UserBot (Pyrogram) ====================
 
 def init_userbot():
-    """ایجاد و راه‌اندازی UserBot"""
+    """راه‌اندازی UserBot"""
     global userbot_client
     
     if not PYROGRAM_AVAILABLE:
+        print("❌ Pyrogram نصب نیست! UserBot غیرفعال است.")
         return False
     
     if not USERBOT_API_ID or not USERBOT_API_HASH:
-        print("⚠️ API_ID یا API_HASH تنظیم نشده است. UserBot غیرفعال است.")
+        print("⚠️ API_ID یا API_HASH تنظیم نشده است.")
         return False
     
     try:
@@ -177,49 +163,125 @@ def init_userbot():
             api_id=USERBOT_API_ID,
             api_hash=USERBOT_API_HASH
         )
-        userbot_client.start()
+        
+        # راه‌اندازی به صورت همزمان
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(userbot_client.start())
+        
         print("✅ UserBot با موفقیت راه‌اندازی شد!")
+        print("🤖 تمام فایل‌ها با UserBot ارسال می‌شوند (بدون محدودیت 50MB)")
         return True
     except Exception as e:
         print(f"❌ خطا در راه‌اندازی UserBot: {e}")
+        print("\n💡 راهنما:")
+        print("1. مطمئن شوید Pyrogram نصب است: pip install pyrogram")
+        print("2. API_ID و API_HASH را از https://my.telegram.org/apps دریافت کنید")
+        print("3. اولین بار که ربات را اجرا می‌کنید، باید شماره تلفن و کد تایید را وارد کنید")
         return False
 
-def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration=None):
-    """ارسال فایل با استفاده از UserBot (Pyrogram)"""
+async def send_video_async(chat_id, file_path, caption, duration=None, progress_callback=None):
+    """ارسال ویدیو با UserBot (async)"""
+    try:
+        sent_message = await userbot_client.send_video(
+            chat_id=chat_id,
+            video=file_path,
+            caption=caption,
+            supports_streaming=True,
+            duration=duration,
+            progress=progress_callback
+        )
+        return True, "موفق"
+    except FloodWait as e:
+        return False, f"FloodWait: منتظر {e.value} ثانیه بمانید"
+    except RPCError as e:
+        return False, f"خطای RPC: {str(e)}"
+    except Exception as e:
+        return False, f"خطا: {str(e)}"
+
+async def send_document_async(chat_id, file_path, caption, progress_callback=None):
+    """ارسال فایل به صورت Document با UserBot (async)"""
+    try:
+        sent_message = await userbot_client.send_document(
+            chat_id=chat_id,
+            document=file_path,
+            caption=caption,
+            progress=progress_callback
+        )
+        return True, "موفق"
+    except FloodWait as e:
+        return False, f"FloodWait: منتظر {e.value} ثانیه بمانید"
+    except RPCError as e:
+        return False, f"خطای RPC: {str(e)}"
+    except Exception as e:
+        return False, f"خطا: {str(e)}"
+
+def send_file_with_userbot(chat_id, file_path, caption, message_obj, is_video=True, duration=None):
+    """ارسال فایل با UserBot + نمایش پیشرفت آپلود"""
     global userbot_client
     
-    if not PYROGRAM_AVAILABLE or not userbot_client:
+    if not userbot_client:
         return False, "UserBot در دسترس نیست"
     
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        async def send():
-            try:
-                if is_video:
-                    sent_message = await userbot_client.send_video(
-                        chat_id=chat_id,
-                        video=file_path,
-                        caption=caption,
-                        supports_streaming=True,
-                        duration=duration if duration else None
-                    )
-                else:
-                    sent_message = await userbot_client.send_document(
-                        chat_id=chat_id,
-                        document=file_path,
-                        caption=caption
-                    )
-                return True, "موفق"
-            except FloodWait as e:
-                return False, f"FloodWait: {e.value} ثانیه"
-            except RPCError as e:
-                return False, str(e)
-            except Exception as e:
-                return False, str(e)
+        # متغیرهای پیشرفت
+        last_update = [0]
+        upload_start_time = time.time()
         
-        success, message = loop.run_until_complete(send())
+        async def progress(current, total):
+            """نمایش پیشرفت آپلود"""
+            try:
+                now = time.time()
+                # آپدیت هر 2 ثانیه
+                if now - last_update[0] < 2:
+                    return
+                last_update[0] = now
+                
+                percent = (current / total) * 100
+                filled = int(percent / 5)
+                bar = '█' * filled + '░' * (20 - filled)
+                
+                current_mb = current / (1024 * 1024)
+                total_mb = total / (1024 * 1024)
+                
+                elapsed = now - upload_start_time
+                speed = current / elapsed if elapsed > 0 else 0
+                speed_mb = speed / (1024 * 1024)
+                
+                remaining = (total - current) / speed if speed > 0 else 0
+                
+                text = (
+                    f"📤 در حال آپلود با UserBot...\n\n"
+                    f"{bar} {percent:.1f}%\n\n"
+                    f"📊 {current_mb:.1f} MB / {total_mb:.1f} MB\n"
+                    f"⚡️ سرعت: {speed_mb:.2f} MB/s\n"
+                    f"⏱ باقیمانده: {int(remaining)}s"
+                )
+                
+                try:
+                    bot.edit_message_text(
+                        text,
+                        message_obj.chat.id,
+                        message_obj.message_id
+                    )
+                except:
+                    pass
+            except:
+                pass
+        
+        # ارسال فایل
+        if is_video:
+            success, message = loop.run_until_complete(
+                send_video_async(chat_id, file_path, caption, duration, progress)
+            )
+        else:
+            success, message = loop.run_until_complete(
+                send_document_async(chat_id, file_path, caption, progress)
+            )
+        
         loop.close()
         return success, message
         
@@ -229,7 +291,6 @@ def send_file_with_userbot(chat_id, file_path, caption, is_video=False, duration
 # ==================== بررسی عضویت ====================
 
 def check_user_membership(user_id):
-    """بررسی عضویت در کانال‌ها"""
     settings = load_settings()
     
     if not settings.get('lock_enabled') or not settings.get('channels'):
@@ -255,7 +316,6 @@ def check_user_membership(user_id):
 # ==================== جستجو ====================
 
 def search_youtube(query_text):
-    """جستجو در یوتیوب"""
     try:
         ydl_opts = {
             'quiet': True,
@@ -302,7 +362,6 @@ def search_youtube(query_text):
         return None
 
 def search_music_video(query_text):
-    """جستجوی موزیک ویدیو"""
     try:
         ydl_opts = {
             'quiet': True,
@@ -351,26 +410,15 @@ def search_music_video(query_text):
         print(f"خطا در جستجو: {e}")
         return None
 
-# ==================== دانلود ====================
+# ==================== دانلود و ارسال ====================
 
 def download_video(url, message, quality='720p'):
-    """دانلود ویدیو با ارسال هوشمند (Video/Document)"""
+    """دانلود ویدیو و ارسال با UserBot"""
     filename = None
     try:
-        # تشخیص user_id
-        if hasattr(message, 'from_user'):
-            user_id = message.from_user.id
-        else:
-            chat_id = message.chat.id
-            user_id = None
-            for uid, data in user_data.items():
-                if data.get('download_user_id') and chat_id:
-                    user_id = uid
-                    break
-            if not user_id:
-                user_id = chat_id
+        user_id = message.from_user.id if hasattr(message, 'from_user') else message.chat.id
         
-        # انتخاب فرمت بر اساس کیفیت
+        # انتخاب فرمت
         if quality == '2160p':
             format_str = 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]'
         elif quality == '1080p':
@@ -385,7 +433,6 @@ def download_video(url, message, quality='720p'):
             format_str = 'best[height<=720]'
         
         last_update_time = [0]
-        download_started = [False]
         
         def progress_hook(d):
             try:
@@ -395,7 +442,6 @@ def download_video(url, message, quality='720p'):
                 last_update_time[0] = current_time
                 
                 if d['status'] == 'downloading':
-                    download_started[0] = True
                     downloaded = d.get('downloaded_bytes', 0)
                     total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
                     speed = d.get('speed', 0)
@@ -411,7 +457,7 @@ def download_video(url, message, quality='720p'):
                         eta_str = f"{eta}s" if eta else "..."
                         
                         text = (
-                            f"🎬 در حال دانلود...\n\n"
+                            f"📥 در حال دانلود...\n\n"
                             f"{bar} {percent:.1f}%\n\n"
                             f"📊 {downloaded_mb:.1f} MB / {total_mb:.1f} MB\n"
                             f"⚡️ {speed_mb:.1f} MB/s\n"
@@ -425,10 +471,7 @@ def download_video(url, message, quality='720p'):
             except:
                 pass
 
-        # دریافت مسیر دانلود
         download_dir = get_download_path()
-        
-        # پاک‌سازی فایل‌های قدیمی
         cleanup_old_files(download_dir)
         
         print(f'📁 مسیر دانلود: {download_dir}')
@@ -442,11 +485,11 @@ def download_video(url, message, quality='720p'):
             'nocheckcertificate': True,
             'no_check_certificate': True,
             'geo_bypass': True,
-            'socket_timeout': 300,  # افزایش timeout برای فایل‌های بزرگ
+            'socket_timeout': 300,
             'retries': 10,
             'fragment_retries': 10,
             'progress_hooks': [progress_hook],
-            'http_chunk_size': 10485760,  # 10MB chunks برای دانلود بهتر فایل‌های بزرگ
+            'http_chunk_size': 10485760,
         }
         
         if os.path.exists('cookies.txt'):
@@ -462,217 +505,77 @@ def download_video(url, message, quality='720p'):
             
             print(f'✅ دانلود کامل: {filename}')
             
-            # بررسی وجود فایل
             if not os.path.exists(filename):
                 raise Exception(f'فایل دانلود نشد: {filename}')
             
             filesize = os.path.getsize(filename)
             print(f'📊 حجم فایل: {filesize / (1024*1024):.2f} MB')
             
-            # محدودیت تلگرام: 1500 مگابایت (1.5 GB) برای جلوگیری از خطای 413
-            # در عمل تلگرام ممکن است فایل‌های بالای 1.5 GB را رد کند
-            max_size = 1500 * 1024 * 1024
+            # محدودیت 2GB برای تلگرام
+            max_size = 2000 * 1024 * 1024
             
             if filesize > max_size:
                 os.remove(filename)
                 bot.edit_message_text(
-                    f'❌ حجم فایل بیش از 1.5 GB!\n\n'
+                    f'❌ حجم فایل بیش از 2 GB!\n\n'
                     f'📹 {title}\n'
                     f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                    '💡 محدودیت تلگرام برای ارسال فایل 1.5 GB است.\n'
-                    'لطفا کیفیت پایین‌تری انتخاب کنید.',
+                    '💡 لطفا کیفیت پایین‌تری انتخاب کنید.',
                     message.chat.id,
                     message.message_id
                 )
                 return
             
-            # تصمیم‌گیری هوشمند: Video یا Document
-            # فایل‌های بالای 50MB به صورت Document ارسال میشن (محدودیت تلگرام برای ویدیو)
-            # فایل‌های تا 1.5 GB دانلود و ارسال میشن
-            send_as_document = filesize > 50 * 1024 * 1024
+            # تصمیم: Video یا Document
+            send_as_video = filesize <= 50 * 1024 * 1024
             
-            # هشدار برای فایل‌های بزرگ
-            if send_as_document:
-                try:
-                    bot.edit_message_text(
-                        f'📁 فایل بزرگ است!\n\n'
-                        f'📹 {title[:50]}...\n'
-                        f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                        f'💡 به صورت فایل ارسال میشه\n'
-                        f'⏳ چند دقیقه صبر کنید...',
-                        message.chat.id,
-                        message.message_id
-                    )
-                    time.sleep(2)
-                except:
-                    pass
-            
-            upload_cancelled = [False]
-            
-            def upload_animation():
-                animations = ['⬆️', '⬆️⬆️', '⬆️⬆️⬆️', '⬆️⬆️⬆️⬆️']
-                idx = 0
-                start_time = time.time()
-                
-                while not upload_cancelled[0]:
-                    try:
-                        elapsed = int(time.time() - start_time)
-                        file_type = "📁 فایل" if send_as_document else "🎬 ویدیو"
-                        bot.edit_message_text(
-                            f'✅ دانلود کامل!\n\n'
-                            f'{file_type}: {title[:40]}...\n'
-                            f'📊 {filesize / (1024*1024):.1f} MB\n\n'
-                            f'📤 در حال ارسال {animations[idx % 4]}\n'
-                            f'⏱ زمان: {elapsed}s',
-                            message.chat.id,
-                            message.message_id
-                        )
-                    except:
-                        pass
-                    idx += 1
-                    time.sleep(1)
-            
-            upload_thread = threading.Thread(target=upload_animation)
-            upload_thread.daemon = True
-            upload_thread.start()
-            
-            upload_start_time = time.time()
-            
-            print(f'📤 شروع آپلود به صورت {"Document" if send_as_document else "Video"}...')
-            
-            # تصمیم‌گیری: استفاده از UserBot یا ربات عادی
-            use_userbot = (
-                USE_USERBOT_FOR_LARGE_FILES and 
-                PYROGRAM_AVAILABLE and 
-                userbot_client and 
-                filesize > (USERBOT_THRESHOLD_MB * 1024 * 1024)
+            # پیام آماده‌سازی برای آپلود
+            bot.edit_message_text(
+                f'✅ دانلود کامل!\n\n'
+                f'📹 {title[:50]}...\n'
+                f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
+                f'🤖 در حال آپلود با UserBot...\n'
+                f'⏳ لطفا صبر کنید...',
+                message.chat.id,
+                message.message_id
             )
             
-            if use_userbot:
-                print(f'🤖 استفاده از UserBot برای ارسال فایل {filesize / (1024*1024):.1f} MB')
-                try:
-                    caption = f'📁 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n\n💡 فایل رو دانلود کنید و پخش کنید\n\n@DanceMoviebot' if send_as_document else f'🎬 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n@DanceMoviebot'
-                    
-                    success, error_msg = send_file_with_userbot(
-                        message.chat.id,
-                        filename,
-                        caption,
-                        is_video=(not send_as_document),
-                        duration=duration if duration else None
-                    )
-                    
-                    if success:
-                        print('✅ آپلود موفق با UserBot')
-                        upload_cancelled[0] = True
-                    else:
-                        print(f'⚠️ خطا در ارسال با UserBot: {error_msg}')
-                        print('🔄 تلاش با ربات عادی...')
-                        use_userbot = False  # fallback به ربات عادی
-                except Exception as e:
-                    print(f'⚠️ خطا در UserBot: {e}')
-                    print('🔄 تلاش با ربات عادی...')
-                    use_userbot = False
+            print(f'📤 شروع آپلود با UserBot...')
             
-            if not use_userbot:
-                # استفاده از ربات عادی (pyTelegramBotAPI)
-                try:
-                    # Timeout بر اساس حجم - برای فایل‌های بزرگ timeout بیشتر
-                    if filesize > 500 * 1024 * 1024:  # بالای 500 MB
-                        upload_timeout = 1800  # 30 دقیقه
-                    elif filesize > 100 * 1024 * 1024:  # بالای 100 MB
-                        upload_timeout = 1200  # 20 دقیقه
-                    elif filesize > 50 * 1024 * 1024:  # بالای 50 MB
-                        upload_timeout = 900  # 15 دقیقه
-                    else:
-                        upload_timeout = 600  # 10 دقیقه
+            # ارسال با UserBot
+            if userbot_client:
+                caption = f'🎬 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n\n@DanceMoviebot'
+                
+                success, error_msg = send_file_with_userbot(
+                    message.chat.id,
+                    filename,
+                    caption,
+                    message,
+                    is_video=send_as_video,
+                    duration=duration if duration else None
+                )
+                
+                if success:
+                    print('✅ آپلود موفق با UserBot')
                     
-                    # استفاده از InputFile برای فایل‌های بزرگ
-                    # برای فایل‌های بزرگ، از مسیر فایل مستقیم استفاده می‌کنیم
-                    if send_as_document:
-                        # ارسال به صورت فایل (Document) - استفاده از مسیر فایل
-                        with open(filename, 'rb') as file:
-                            bot.send_document(
-                                message.chat.id,
-                                file,
-                                caption=f'📁 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n\n💡 فایل رو دانلود کنید و پخش کنید\n\n@DanceMoviebot',
-                                timeout=upload_timeout,
-                                visible_file_name=f'{title[:50]}.mp4'
-                            )
-                    else:
-                        # ارسال به صورت ویدیو (پخش مستقیم)
-                        with open(filename, 'rb') as file:
-                            bot.send_video(
-                                message.chat.id,
-                                file,
-                                caption=f'🎬 {title}\n\n📊 حجم: {filesize / (1024*1024):.1f} MB\n@DanceMoviebot',
-                                supports_streaming=True,
-                                duration=duration if duration else None,
-                                timeout=upload_timeout
-                            )
-                    
-                    print('✅ آپلود موفق')
-                    upload_cancelled[0] = True
-                except Exception as upload_error:
-                    error_str = str(upload_error)
-                    error_code = getattr(upload_error, 'error_code', None)
-                    
-                    # لاگ خطا برای دیباگ
-                    print(f'❌ خطا در آپلود: {error_str}')
-                    print(f'📊 کد خطا: {error_code}')
-                    print(f'📁 حجم فایل: {filesize / (1024*1024):.2f} MB')
-                    
-                    upload_cancelled[0] = True
-                    
-                    # بررسی خطای 413 (Request Entity Too Large)
-                    if '413' in error_str or (error_code and error_code == 413) or 'Request Entity Too Large' in error_str or 'entity too large' in error_str.lower():
-                        try:
-                            if filename and os.path.exists(filename):
-                                os.remove(filename)
-                        except:
-                            pass
-                        
+                    # پیام موفقیت
+                    try:
                         bot.edit_message_text(
-                            f'❌ خطا: فایل خیلی بزرگ است!\n\n'
-                            f'📹 {title[:50]}...\n'
-                            f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                            f'💡 تلگرام نمی‌تواند این فایل را بپذیرد.\n\n'
-                            f'راه حل:\n'
-                            f'1️⃣ کیفیت پایین‌تری انتخاب کنید (480p یا 360p)\n'
-                            f'2️⃣ ویدیو کوتاه‌تری انتخاب کنید\n'
-                            f'3️⃣ چند دقیقه صبر کنید و دوباره تلاش کنید',
+                            f'✅ ارسال موفق!\n\n'
+                            f'🎬 {title[:50]}...\n'
+                            f'📊 {filesize / (1024*1024):.1f} MB\n\n'
+                            f'🤖 ارسال شده با UserBot (بدون محدودیت)',
                             message.chat.id,
                             message.message_id
                         )
-                        return
-                    else:
-                        # برای خطاهای دیگر، پیام مناسب نمایش بده
-                        try:
-                            if filename and os.path.exists(filename):
-                                os.remove(filename)
-                        except:
-                            pass
-                        
-                        # نمایش پیام خطا با جزئیات
-                        error_msg = error_str[:200] if len(error_str) > 200 else error_str
-                        bot.edit_message_text(
-                            f'❌ خطا در ارسال فایل!\n\n'
-                            f'📹 {title[:50]}...\n'
-                            f'📊 حجم: {filesize / (1024*1024):.1f} MB\n\n'
-                            f'💡 خطا: {error_msg}\n\n'
-                            f'راه حل:\n'
-                            f'1️⃣ چند دقیقه صبر کنید و دوباره تلاش کنید\n'
-                            f'2️⃣ کیفیت پایین‌تری انتخاب کنید\n'
-                            f'3️⃣ لینک دیگری امتحان کنید',
-                            message.chat.id,
-                            message.message_id
-                        )
-                        return
-                finally:
-                    if not upload_cancelled[0]:
-                        upload_cancelled[0] = True
-                    time.sleep(0.5)
-            
-            upload_time = int(time.time() - upload_start_time)
+                        time.sleep(2)
+                        bot.delete_message(message.chat.id, message.message_id)
+                    except:
+                        pass
+                else:
+                    raise Exception(f'خطا در ارسال با UserBot: {error_msg}')
+            else:
+                raise Exception('UserBot در دسترس نیست')
             
             # پاک کردن فایل
             try:
@@ -682,29 +585,12 @@ def download_video(url, message, quality='720p'):
             except Exception as e:
                 print(f'خطا در پاک کردن فایل: {e}')
             
-            try:
-                file_type_emoji = "📁" if send_as_document else "🎬"
-                bot.edit_message_text(
-                    f'✅ ارسال موفق!\n\n'
-                    f'{file_type_emoji} {title[:50]}...\n'
-                    f'📊 {filesize / (1024*1024):.1f} MB\n'
-                    f'⏱ زمان آپلود: {upload_time}s',
-                    message.chat.id,
-                    message.message_id
-                )
-                
-                time.sleep(2)
-                bot.delete_message(message.chat.id, message.message_id)
-            except:
-                pass
-            
             increment_download()
-            
             show_main_menu(message.chat.id, user_id)
             
     except Exception as e:
         error_message = str(e)
-        print(f'❌ خطا در دانلود: {error_message}')
+        print(f'❌ خطا: {error_message}')
         
         # پاک کردن فایل در صورت خطا
         try:
@@ -714,36 +600,20 @@ def download_video(url, message, quality='720p'):
         except:
             pass
         
-        if any(x in error_message.lower() for x in ['timeout', 'timed out', 'connection', 'proxy', 'tunnel']):
-            try:
-                bot.edit_message_text(
-                    f'❌ خطا در دانلود!\n\n'
-                    f'💡 احتمالاً مشکل از اتصال به اینترنت است.\n\n'
-                    f'راه حل:\n'
-                    f'1️⃣ لینک دیگری امتحان کنید\n'
-                    f'2️⃣ کیفیت پایین‌تر انتخاب کنید\n'
-                    f'3️⃣ چند دقیقه دیگر تلاش کنید',
-                    message.chat.id,
-                    message.message_id
-                )
-            except:
-                pass
-        else:
-            try:
-                bot.edit_message_text(
-                    f'❌ خطا در دانلود!\n\n'
-                    f'جزئیات: {error_message[:100]}\n\n'
-                    f'لطفا دوباره تلاش کنید.',
-                    message.chat.id,
-                    message.message_id
-                )
-            except:
-                pass
+        try:
+            bot.edit_message_text(
+                f'❌ خطا در دانلود یا ارسال!\n\n'
+                f'جزئیات: {error_message[:150]}\n\n'
+                f'لطفا دوباره تلاش کنید یا کیفیت پایین‌تر انتخاب کنید.',
+                message.chat.id,
+                message.message_id
+            )
+        except:
+            pass
 
 # ==================== کیبوردها ====================
 
 def main_menu_keyboard(user_id):
-    """کیبورد منوی اصلی"""
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("📥 دانلود با لینک", callback_data='download_link'),
@@ -754,19 +624,17 @@ def main_menu_keyboard(user_id):
         markup.add(
             types.InlineKeyboardButton("🔐 مدیریت قفل کانال", callback_data='admin_lock'),
             types.InlineKeyboardButton("📢 ارسال تبلیغ", callback_data='admin_broadcast'),
-            types.InlineKeyboardButton("📊 وضعیت کاربران", callback_data='admin_stats')
+            types.InlineKeyboardButton("📊 آمار ربات", callback_data='admin_stats')
         )
     
     return markup
 
 def reply_keyboard_menu(user_id):
-    """کیبورد ثابت پایین صفحه"""
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
     markup.add(types.KeyboardButton("🏠 منو اصلی"))
     return markup
 
 def quality_keyboard():
-    """کیبورد انتخاب کیفیت"""
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("📹 4K (2160p)", callback_data='quality_2160p'),
@@ -774,24 +642,18 @@ def quality_keyboard():
         types.InlineKeyboardButton("📹 HD (720p)", callback_data='quality_720p'),
         types.InlineKeyboardButton("📹 SD (480p)", callback_data='quality_480p'),
         types.InlineKeyboardButton("📹 Low (360p)", callback_data='quality_360p'),
-        types.InlineKeyboardButton("🔙 بازگشت به منو", callback_data='back_to_menu')
+        types.InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_menu')
     )
     return markup
 
 def show_main_menu(chat_id, user_id, text='🎬 عملیات بعدی:\n\nلطفا یکی از گزینه‌ها را انتخاب کنید:'):
-    """نمایش منوی اصلی"""
-    if isinstance(user_id, int):
-        actual_user_id = user_id
-    else:
-        actual_user_id = chat_id
-    
+    actual_user_id = user_id if isinstance(user_id, int) else chat_id
     bot.send_message(chat_id, text, reply_markup=main_menu_keyboard(actual_user_id))
 
 # ==================== Handlers ====================
 
 @bot.message_handler(commands=['start'])
 def start_command(message):
-    """دستور start"""
     user_id = message.from_user.id
     add_user(user_id)
     
@@ -815,7 +677,7 @@ def start_command(message):
             else:
                 channel_url = channel if channel.startswith('http') else f"https://t.me/{channel}"
             
-            markup.add(types.InlineKeyboardButton(f"📢 عضویت در کانال {i}", url=channel_url))
+            markup.add(types.InlineKeyboardButton(f"📢 کانال {i}", url=channel_url))
         
         markup.add(types.InlineKeyboardButton("✅ عضو شدم", callback_data='check_membership'))
         
@@ -827,16 +689,19 @@ def start_command(message):
         )
         return
     
+    userbot_status = "✅ فعال" if userbot_client else "❌ غیرفعال"
+    
     bot.send_message(
         message.chat.id,
-        '🎬 به ربات Dance Movie خوش آمدید!\n\n'
+        f'🎬 به ربات Dance Movie خوش آمدید!\n\n'
+        f'🤖 UserBot: {userbot_status}\n'
+        f'💾 محدودیت حجم: {"بدون محدودیت" if userbot_client else "50 MB"}\n\n'
         'لطفا یکی از گزینه‌های زیر را انتخاب کنید:',
         reply_markup=main_menu_keyboard(user_id)
     )
 
 @bot.message_handler(commands=['skip'])
 def skip_command(message):
-    """دستور skip"""
     user_id = message.from_user.id
     
     if user_id != ADMIN_ID:
@@ -864,15 +729,11 @@ def skip_command(message):
         bot.send_message(
             message.chat.id,
             '✅ بدون مدیا!\n\n'
-            '2️⃣ حالا متن تبلیغ را ارسال کنید:\n\n'
-            '💡 میتوانید از HTML استفاده کنید:\n'
-            '<b>متن بولد</b>\n'
-            '<i>متن ایتالیک</i>'
+            '2️⃣ حالا متن تبلیغ را ارسال کنید:'
         )
 
 @bot.message_handler(func=lambda message: message.text == '🏠 منو اصلی')
 def keyboard_menu_handler(message):
-    """مدیریت دکمه کیبورد ثابت"""
     user_id = message.from_user.id
     
     if user_id in user_states:
@@ -886,7 +747,6 @@ def keyboard_menu_handler(message):
 
 @bot.message_handler(content_types=['text'])
 def text_handler(message):
-    """مدیریت پیام‌های متنی"""
     user_id = message.from_user.id
     state = user_states.get(user_id, STATE_NONE)
     
@@ -926,10 +786,10 @@ def text_handler(message):
         
         if youtube_results is None or musicvideo_results is None:
             bot.edit_message_text(
-                '❌ متأسفانه نمی‌تونه به یوتیوب دسترسی داشته باشه!\n\n'
+                '❌ خطا در دسترسی به یوتیوب!\n\n'
                 '💡 راه حل:\n'
                 '1️⃣ از "📥 دانلود با لینک" استفاده کنید\n'
-                '2️⃣ لینک یوتیوب رو کپی کنید و بفرستید',
+                '2️⃣ لینک یوتیوب را کپی کنید و بفرستید',
                 message.chat.id,
                 msg.message_id
             )
@@ -939,7 +799,7 @@ def text_handler(message):
         if not youtube_results and not musicvideo_results:
             bot.edit_message_text(
                 '❌ نتیجه‌ای پیدا نشد.\n\n'
-                '💡 بجای جستجو، لینک ویدیو رو مستقیم بفرستید:',
+                '💡 لینک ویدیو را مستقیم بفرستید:',
                 message.chat.id,
                 msg.message_id
             )
@@ -960,11 +820,11 @@ def text_handler(message):
             button_text = f"{platform_emoji} {result['title'][:35]}... ({result['duration']})"
             markup.add(types.InlineKeyboardButton(button_text, callback_data=f'dl_{idx}'))
         
-        markup.add(types.InlineKeyboardButton("🔙 بازگشت به منو", callback_data='back_to_menu'))
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_menu'))
         
         bot.edit_message_text(
-            f'🔍 نتایج جستجو برای: <b>{query}</b>\n\n'
-            f'📊 {len(youtube_results)} نتیجه عمومی + {len(musicvideo_results)} موزیک ویدیو = {len(all_results)} نتیجه\n\n'
+            f'🔍 نتایج جستجو: <b>{query}</b>\n\n'
+            f'📊 {len(youtube_results)} عمومی + {len(musicvideo_results)} موزیک ویدیو\n\n'
             'روی ویدیو مورد نظر کلیک کنید:',
             message.chat.id,
             msg.message_id,
@@ -991,11 +851,11 @@ def text_handler(message):
         if not is_valid_format:
             bot.send_message(
                 message.chat.id,
-                '❌ فرمت اشتباه است!\n\n'
+                '❌ فرمت اشتباه!\n\n'
                 '✅ فرمت صحیح:\n'
-                '• با @: @channelname\n'
-                '• یا آی‌دی عددی: -1001234567890\n'
-                '• یا لینک: https://t.me/channelname'
+                '• @channelname\n'
+                '• -1001234567890\n'
+                '• https://t.me/channelname'
             )
             return
         
@@ -1011,12 +871,12 @@ def text_handler(message):
             bot.send_message(
                 message.chat.id,
                 f'✅ کانال اول: {channel}\n\n'
-                '📢 لطفا آی‌دی کانال دوم را ارسال کنید یا /skip بزنید:'
+                '📢 کانال دوم را ارسال کنید یا /skip بزنید:'
             )
         except Exception as e:
             bot.send_message(
                 message.chat.id,
-                f'❌ خطا: {str(e)}\n\nلطفا دوباره تلاش کنید.'
+                f'❌ خطا: {str(e)}\n\nدوباره تلاش کنید.'
             )
     
     elif state == STATE_WAITING_CHANNEL_2:
@@ -1079,8 +939,8 @@ def text_handler(message):
         
         progress_msg = bot.send_message(
             message.chat.id,
-            f'📢 در حال ارسال تبلیغ...\n\n'
-            f'تعداد کاربران هدف: {len(target_users)}\n'
+            f'📢 در حال ارسال...\n\n'
+            f'هدف: {len(target_users)}\n'
             f'✅ موفق: 0\n'
             f'❌ ناموفق: 0'
         )
@@ -1088,33 +948,19 @@ def text_handler(message):
         for idx, user_id_to_send in enumerate(target_users):
             try:
                 if ad_media and ad_media_type == 'photo':
-                    bot.send_photo(
-                        user_id_to_send,
-                        ad_media,
-                        caption=ad_text,
-                        parse_mode='HTML'
-                    )
+                    bot.send_photo(user_id_to_send, ad_media, caption=ad_text, parse_mode='HTML')
                 elif ad_media and ad_media_type == 'video':
-                    bot.send_video(
-                        user_id_to_send,
-                        ad_media,
-                        caption=ad_text,
-                        parse_mode='HTML'
-                    )
+                    bot.send_video(user_id_to_send, ad_media, caption=ad_text, parse_mode='HTML')
                 else:
-                    bot.send_message(
-                        user_id_to_send,
-                        ad_text,
-                        parse_mode='HTML'
-                    )
+                    bot.send_message(user_id_to_send, ad_text, parse_mode='HTML')
                 success_count += 1
             except:
                 fail_count += 1
             
             if (idx + 1) % 10 == 0 or (idx + 1) == len(target_users):
                 bot.edit_message_text(
-                    f'📢 در حال ارسال تبلیغ...\n\n'
-                    f'تعداد کاربران هدف: {len(target_users)}\n'
+                    f'📢 در حال ارسال...\n\n'
+                    f'هدف: {len(target_users)}\n'
                     f'✅ موفق: {success_count}\n'
                     f'❌ ناموفق: {fail_count}',
                     message.chat.id,
@@ -1126,8 +972,8 @@ def text_handler(message):
         user_states[user_id] = STATE_NONE
         
         bot.edit_message_text(
-            f'✅ ارسال تبلیغ تکمیل شد!\n\n'
-            f'تعداد هدف: {len(target_users)}\n'
+            f'✅ ارسال تبلیغ تکمیل!\n\n'
+            f'هدف: {len(target_users)}\n'
             f'✅ موفق: {success_count}\n'
             f'❌ ناموفق: {fail_count}',
             message.chat.id,
@@ -1138,7 +984,6 @@ def text_handler(message):
 
 @bot.message_handler(content_types=['photo', 'video'])
 def media_handler(message):
-    """مدیریت رسانه‌ها"""
     user_id = message.from_user.id
     state = user_states.get(user_id, STATE_NONE)
     
@@ -1159,12 +1004,11 @@ def media_handler(message):
         bot.send_message(
             message.chat.id,
             '✅ مدیا دریافت شد!\n\n'
-            '2️⃣ حالا متن تبلیغ را ارسال کنید:'
+            '2️⃣ متن تبلیغ را ارسال کنید:'
         )
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    """مدیریت callback queryها"""
     user_id = call.from_user.id
     
     if call.data == 'check_membership':
@@ -1173,26 +1017,26 @@ def callback_handler(call):
         if is_member:
             bot.answer_callback_query(call.id, '✅ عضویت تایید شد!')
             bot.edit_message_text(
-                '🎬 به ربات دانلود خوش آمدید!\n\n'
+                '🎬 به ربات خوش آمدید!\n\n'
                 'لطفا یکی از گزینه‌های زیر را انتخاب کنید:',
                 call.message.chat.id,
                 call.message.message_id,
                 reply_markup=main_menu_keyboard(user_id)
             )
         else:
-            bot.answer_callback_query(call.id, '❌ هنوز در همه کانال‌ها عضو نشده‌اید!', show_alert=True)
+            bot.answer_callback_query(call.id, '❌ هنوز عضو نشده‌اید!', show_alert=True)
     
     elif call.data == 'download_link':
         user_states[user_id] = STATE_WAITING_LINK
         
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🔙 بازگشت به منو", callback_data='back_to_menu'))
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_menu'))
         
         bot.send_message(
             call.message.chat.id,
-            '🔗 لطفا لینک موزیک ویدیو را ارسال کنید:\n\n'
-            '🎬 یوتیوب: https://www.youtube.com/watch?v=...\n'
-            '📷 اینستاگرام: https://www.instagram.com/...',
+            '🔗 لینک موزیک ویدیو را ارسال کنید:\n\n'
+            '🎬 یوتیوب\n'
+            '📷 اینستاگرام',
             reply_markup=markup
         )
     
@@ -1200,11 +1044,11 @@ def callback_handler(call):
         user_states[user_id] = STATE_WAITING_NAME
         
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🔙 بازگشت به منو", callback_data='back_to_menu'))
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_menu'))
         
         bot.send_message(
             call.message.chat.id,
-            '🔍 لطفا نام موزیک ویدیو مورد نظرتون رو وارد کنید :',
+            '🔍 نام موزیک ویدیو را وارد کنید:',
             reply_markup=markup
         )
     
@@ -1215,21 +1059,20 @@ def callback_handler(call):
         
         settings = load_settings()
         lock_status = "🔐 فعال" if settings.get('lock_enabled') else "🔓 غیرفعال"
-        channels_text = "\n".join(settings.get('channels', [])) if settings.get('channels') else "هیچ کانالی تنظیم نشده"
+        channels_text = "\n".join(settings.get('channels', [])) if settings.get('channels') else "هیچ کانالی"
         
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
             types.InlineKeyboardButton("➕ افزودن کانال", callback_data='add_channel'),
             types.InlineKeyboardButton("🗑 حذف کانال‌ها", callback_data='remove_channels'),
-            types.InlineKeyboardButton(f"{'🔓 غیرفعال کردن' if settings.get('lock_enabled') else '🔐 فعال کردن'}", callback_data='toggle_lock'),
+            types.InlineKeyboardButton(f"{'🔓 غیرفعال' if settings.get('lock_enabled') else '🔐 فعال'}", callback_data='toggle_lock'),
             types.InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_menu')
         )
         
         bot.edit_message_text(
             f'🔐 مدیریت قفل کانال\n\n'
-            f'(ابتدا ربات رو به عنوان ادمین عضو کانال مد نظر کنید سپس دسترسی عضو کردن رو به ربات بدید)\n\n'
             f'وضعیت: {lock_status}\n\n'
-            f'کانال‌های تنظیم شده:\n{channels_text}',
+            f'کانال‌ها:\n{channels_text}',
             call.message.chat.id,
             call.message.message_id,
             reply_markup=markup
@@ -1241,11 +1084,11 @@ def callback_handler(call):
         
         user_states[user_id] = STATE_WAITING_CHANNEL_1
         bot.edit_message_text(
-            '📢 لطفا آی‌دی کانال اول را ارسال کنید:\n\n'
-            '✅ فرمت صحیح:\n'
-            '• با @: @channelname\n'
-            '• یا آی‌دی عددی: -1001234567890\n'
-            '• یا لینک: https://t.me/channelname',
+            '📢 آی‌دی کانال اول را ارسال کنید:\n\n'
+            '✅ فرمت:\n'
+            '• @channelname\n'
+            '• -1001234567890\n'
+            '• https://t.me/channelname',
             call.message.chat.id,
             call.message.message_id
         )
@@ -1258,10 +1101,10 @@ def callback_handler(call):
         settings['channels'] = []
         save_settings(settings)
         
-        bot.answer_callback_query(call.id, '✅ همه کانال‌ها حذف شدند!')
+        bot.answer_callback_query(call.id, '✅ کانال‌ها حذف شدند!')
         
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🔙 بازگشت به منو", callback_data='back_to_menu'))
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_menu'))
         
         bot.edit_message_text(
             '✅ کانال‌ها حذف شدند.',
@@ -1279,10 +1122,10 @@ def callback_handler(call):
         save_settings(settings)
         
         status = "فعال" if settings['lock_enabled'] else "غیرفعال"
-        bot.answer_callback_query(call.id, f'✅ قفل کانال {status} شد!')
+        bot.answer_callback_query(call.id, f'✅ قفل {status} شد!')
         
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🔙 بازگشت به منو", callback_data='back_to_menu'))
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_menu'))
         
         bot.edit_message_text(
             f'✅ قفل کانال {status} شد!',
@@ -1301,20 +1144,20 @@ def callback_handler(call):
         
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
-            types.InlineKeyboardButton("👥 10 کاربر اول", callback_data='broadcast_first_10'),
-            types.InlineKeyboardButton("👥 10 کاربر آخر", callback_data='broadcast_last_10'),
-            types.InlineKeyboardButton("👥 100 کاربر اول", callback_data='broadcast_first_100'),
-            types.InlineKeyboardButton("👥 100 کاربر آخر", callback_data='broadcast_last_100'),
-            types.InlineKeyboardButton("👥 1000 کاربر اول", callback_data='broadcast_first_1000'),
-            types.InlineKeyboardButton("👥 1000 کاربر آخر", callback_data='broadcast_last_1000'),
-            types.InlineKeyboardButton("👥 همه کاربران", callback_data='broadcast_all'),
+            types.InlineKeyboardButton("👥 10 اول", callback_data='broadcast_first_10'),
+            types.InlineKeyboardButton("👥 10 آخر", callback_data='broadcast_last_10'),
+            types.InlineKeyboardButton("👥 100 اول", callback_data='broadcast_first_100'),
+            types.InlineKeyboardButton("👥 100 آخر", callback_data='broadcast_last_100'),
+            types.InlineKeyboardButton("👥 1000 اول", callback_data='broadcast_first_1000'),
+            types.InlineKeyboardButton("👥 1000 آخر", callback_data='broadcast_last_1000'),
+            types.InlineKeyboardButton("👥 همه", callback_data='broadcast_all'),
             types.InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_menu')
         )
         
         bot.edit_message_text(
             f'📢 ارسال تبلیغ\n\n'
-            f'تعداد کل کاربران: {total_users}\n\n'
-            'لطفا تعداد کاربران مورد نظر را انتخاب کنید:',
+            f'کل کاربران: {total_users}\n\n'
+            'تعداد مورد نظر را انتخاب کنید:',
             call.message.chat.id,
             call.message.message_id,
             reply_markup=markup
@@ -1331,25 +1174,21 @@ def callback_handler(call):
         user_data[user_id]['broadcast_type'] = broadcast_type
         user_states[user_id] = STATE_WAITING_AD_MEDIA
         
-        if broadcast_type == 'first_10':
-            target_text = '10 کاربر اول'
-        elif broadcast_type == 'last_10':
-            target_text = '10 کاربر آخر'
-        elif broadcast_type == 'first_100':
-            target_text = '100 کاربر اول'
-        elif broadcast_type == 'last_100':
-            target_text = '100 کاربر آخر'
-        elif broadcast_type == 'first_1000':
-            target_text = '1000 کاربر اول'
-        elif broadcast_type == 'last_1000':
-            target_text = '1000 کاربر آخر'
-        else:
-            target_text = 'همه کاربران'
+        type_map = {
+            'first_10': '10 اول',
+            'last_10': '10 آخر',
+            'first_100': '100 اول',
+            'last_100': '100 آخر',
+            'first_1000': '1000 اول',
+            'last_1000': '1000 آخر',
+            'all': 'همه'
+        }
+        target_text = type_map.get(broadcast_type, 'همه')
         
         bot.edit_message_text(
-            f'📢 ارسال تبلیغ به {target_text}\n\n'
-            '1️⃣ لطفا عکس یا ویدیوی تبلیغ را ارسال کنید:\n\n'
-            '💡 اگر نمیخواهید مدیا ارسال کنید، /skip بزنید.',
+            f'📢 ارسال به {target_text}\n\n'
+            '1️⃣ عکس/ویدیو تبلیغ را ارسال کنید\n\n'
+            '💡 یا /skip برای بدون مدیا',
             call.message.chat.id,
             call.message.message_id
         )
@@ -1366,15 +1205,15 @@ def callback_handler(call):
         
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
-            types.InlineKeyboardButton("📥 دریافت لیست کاربران", callback_data='export_users'),
+            types.InlineKeyboardButton("📥 دریافت لیست", callback_data='export_users'),
             types.InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_menu')
         )
         
         bot.edit_message_text(
-            f'📊 وضعیت کاربران\n\n'
-            f'👥 تعداد کل کاربران: {total_users}\n'
-            f'📥 تعداد کل دانلودها: {total_downloads}\n\n'
-            f'💡 برای دریافت لیست کامل کاربران روی دکمه زیر کلیک کنید:',
+            f'📊 آمار ربات\n\n'
+            f'👥 کاربران: {total_users}\n'
+            f'📥 دانلودها: {total_downloads}\n\n'
+            'برای لیست کامل کلیک کنید:',
             call.message.chat.id,
             call.message.message_id,
             reply_markup=markup
@@ -1386,84 +1225,41 @@ def callback_handler(call):
         
         users = load_users()
         
-        txt_content = "لیست کاربران ربات\n"
-        txt_content += "=" * 50 + "\n\n"
-        txt_content += f"تعداد کل کاربران: {len(users)}\n\n"
-        txt_content += "=" * 50 + "\n\n"
+        txt_content = "لیست کاربران\n" + "="*50 + f"\n\nکل: {len(users)}\n\n" + "="*50 + "\n\n"
         
-        for idx, user_id_item in enumerate(users, 1):
+        for idx, uid in enumerate(users, 1):
             try:
-                chat = bot.get_chat(user_id_item)
-                username = f"@{chat.username}" if chat.username else "بدون یوزرنیم"
-                first_name = chat.first_name or ""
-                last_name = chat.last_name or ""
-                full_name = f"{first_name} {last_name}".strip() or "بدون نام"
-                
-                txt_content += f"{idx}. {full_name}\n"
-                txt_content += f"   یوزرنیم: {username}\n"
-                txt_content += f"   آی‌دی: {user_id_item}\n"
-                txt_content += "-" * 50 + "\n\n"
-            except Exception as e:
-                txt_content += f"{idx}. کاربر نامشخص\n"
-                txt_content += f"   آی‌دی: {user_id_item}\n"
-                txt_content += f"   خطا: {str(e)}\n"
-                txt_content += "-" * 50 + "\n\n"
+                chat = bot.get_chat(uid)
+                username = f"@{chat.username}" if chat.username else "---"
+                name = f"{chat.first_name or ''} {chat.last_name or ''}".strip() or "---"
+                txt_content += f"{idx}. {name}\n   یوزرنیم: {username}\n   ID: {uid}\n" + "-"*50 + "\n\n"
+            except:
+                txt_content += f"{idx}. نامشخص\n   ID: {uid}\n" + "-"*50 + "\n\n"
         
         filename = 'users_list.txt'
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(txt_content)
         
         with open(filename, 'rb') as f:
-            bot.send_document(
-                call.message.chat.id,
-                f,
-                caption=f'📋 لیست کاربران\n\nتعداد: {len(users)} نفر'
-            )
+            bot.send_document(call.message.chat.id, f, caption=f'📋 لیست {len(users)} کاربر')
         
         try:
             os.remove(filename)
         except:
             pass
         
-        bot.answer_callback_query(call.id, '✅ فایل ارسال شد!')
+        bot.answer_callback_query(call.id, '✅ ارسال شد!')
     
     elif call.data == 'back_to_menu':
         if user_id in user_states:
             user_states[user_id] = STATE_NONE
         
         bot.edit_message_text(
-            '🎬 منوی اصلی:\n\nلطفا یکی از گزینه‌ها را انتخاب کنید:',
+            '🎬 منوی اصلی:\n\nیکی از گزینه‌ها را انتخاب کنید:',
             call.message.chat.id,
             call.message.message_id,
             reply_markup=main_menu_keyboard(user_id)
         )
-    
-    elif call.data == 'back_to_search':
-        search_results = user_data.get(user_id, {}).get('search_results', [])
-        last_search_query = user_data.get(user_id, {}).get('last_search_query', '')
-        
-        if search_results:
-            markup = types.InlineKeyboardMarkup(row_width=1)
-            
-            for idx, result in enumerate(search_results):
-                platform_emoji = '🎬' if result['platform'] == 'youtube' else '🎵'
-                button_text = f"{platform_emoji} {result['title'][:35]}... ({result['duration']})"
-                markup.add(types.InlineKeyboardButton(button_text, callback_data=f'dl_{idx}'))
-            
-            markup.add(types.InlineKeyboardButton("🔙 بازگشت به منو", callback_data='back_to_menu'))
-            
-            youtube_count = sum(1 for r in search_results if r['platform'] == 'youtube')
-            mv_count = sum(1 for r in search_results if r['platform'] == 'youtube_mv')
-            
-            bot.edit_message_text(
-                f'🔍 نتایج جستجو برای: <b>{last_search_query}</b>\n\n'
-                f'📊 {youtube_count} نتیجه عمومی + {mv_count} موزیک ویدیو = {len(search_results)} نتیجه\n\n'
-                'روی ویدیو مورد نظر کلیک کنید:',
-                call.message.chat.id,
-                call.message.message_id,
-                reply_markup=markup,
-                parse_mode='HTML'
-            )
     
     elif call.data.startswith('dl_'):
         video_index = int(call.data.split('_')[1])
@@ -1479,10 +1275,9 @@ def callback_handler(call):
             platform_emoji = '🎬' if video['platform'] == 'youtube' else '🎵'
             
             bot.edit_message_text(
-                f'{platform_emoji} یوتیوب\n\n'
-                f'{video["title"][:60]}...\n'
-                f'⏱ مدت: {video["duration"]}\n\n'
-                '📊 لطفا کیفیت دانلود را انتخاب کنید:',
+                f'{platform_emoji} {video["title"][:60]}...\n'
+                f'⏱ {video["duration"]}\n\n'
+                '📊 کیفیت را انتخاب کنید:',
                 call.message.chat.id,
                 call.message.message_id,
                 reply_markup=quality_keyboard()
@@ -1511,37 +1306,47 @@ def callback_handler(call):
 def main():
     """راه‌اندازی ربات"""
     try:
-        # ایجاد پوشه دانلود در ابتدا
         download_dir = get_download_path()
         print(f'📁 مسیر دانلود: {download_dir}')
         
-        print('🤖 ربات با pyTelegramBotAPI شروع به کار کرد...')
-        print('✅ این نسخه با Python 3.13 سازگار است!')
-        print('💾 مدیریت فایل بهبود یافته!')
-        print('📦 پشتیبانی از فایل‌های تا 2GB!')
+        print('\n' + '='*60)
+        print('🤖 ربات Dance Movie')
+        print('='*60)
+        print('✅ Python 3.13+ compatible')
+        print('📦 pyTelegramBotAPI + Pyrogram')
+        print('='*60)
         
-        # راه‌اندازی UserBot (اختیاری)
-        if USE_USERBOT_FOR_LARGE_FILES:
-            print('\n🤖 در حال راه‌اندازی UserBot...')
+        # راه‌اندازی UserBot
+        if USE_USERBOT_ALWAYS:
+            print('\n🤖 راه‌اندازی UserBot...')
             if init_userbot():
-                print('✅ UserBot فعال است - فایل‌های بزرگ با UserBot ارسال می‌شوند')
+                print('✅ UserBot فعال - بدون محدودیت 50MB!')
+                print('💾 فایل‌های تا 2GB قابل ارسال')
             else:
-                print('⚠️ UserBot غیرفعال است - از ربات عادی استفاده می‌شود')
-                print('💡 برای فعال‌سازی UserBot:')
-                print('   1. pip install pyrogram')
-                print('   2. API_ID و API_HASH را از https://my.telegram.org/apps دریافت کنید')
-                print('   3. USERBOT_API_ID و USERBOT_API_HASH را در کد تنظیم کنید')
+                print('❌ UserBot غیرفعال - محدودیت 50MB')
+                print('\n💡 برای فعال‌سازی UserBot:')
+                print('1. pip install pyrogram')
+                print('2. API_ID و API_HASH از https://my.telegram.org/apps')
+                print('3. اولین اجرا: شماره تلفن + کد تایید')
+        
+        print('\n🚀 ربات شروع به کار کرد...\n')
         
         bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        
+    except KeyboardInterrupt:
+        print('\n\n⚠️ ربات متوقف شد')
+        if userbot_client:
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(userbot_client.stop())
+                print('✅ UserBot بسته شد')
+            except:
+                pass
     except Exception as e:
-        print(f'❌ خطا: {e}')
+        print(f'\n❌ خطای کلی: {e}')
         print('\n💡 راه حل:')
-        print('1️⃣ نصب کتابخانه‌ها:')
-        print('   pip3 install pyTelegramBotAPI --user')
-        print('   pip3 install yt-dlp --user')
-        print('   pip3 install pyrogram --user  # برای UserBot (اختیاری)')
-        print('2️⃣ اجرای ربات:')
-        print('   python3 main.py')
+    
 
 if __name__ == '__main__':
     main()
