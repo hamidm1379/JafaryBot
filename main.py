@@ -611,7 +611,7 @@ def download_video(url, message, quality='720p'):
                             )
                     
                     print('✅ آپلود موفق')
-                
+                    upload_cancelled[0] = True
                 except Exception as upload_error:
                     error_str = str(upload_error)
                     error_code = getattr(upload_error, 'error_code', None)
@@ -667,10 +667,10 @@ def download_video(url, message, quality='720p'):
                             message.message_id
                         )
                         return
-                
-            finally:
-                upload_cancelled[0] = True
-                time.sleep(0.5)
+                finally:
+                    if not upload_cancelled[0]:
+                        upload_cancelled[0] = True
+                    time.sleep(0.5)
             
             upload_time = int(time.time() - upload_start_time)
             
